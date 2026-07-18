@@ -1,22 +1,34 @@
 #-------------------------------------------------------------------------------
-# Title: GERD Outcome Data Upload (R9)
+# Title: GERD / Oesophagitis Outcome Data Upload (R9)
 # Data set: All of Us Controlled Tier CDR v9 (C2024Q3R9)
 # Description: BigQuery pull of gastroesophageal reflux disease (GERD) condition
 #              records for all participants who shared Fitbit data. This mirrors
 #              the constipation outcome upload pattern, swapping in GERD seed
-#              concepts. The output (R9_gerd_outcome.rds) is used as the primary
-#              OUTCOME in "Sleep and GERD Analysis File R9.R".
+#              concepts. The output (R9_gerd_outcome.rds) is used as the OUTCOME
+#              source for ALL of the GERD analysis files:
+#                - "Sleep and GERD Analysis File R9.R"
+#                - "Activity and GERD Analysis File R9.R"
+#                - "Activity Sleep and GERD Analysis File R9.R"
+#
+#              TWO outcome phenotypes are derived downstream from this single pull:
+#                (1) has_gerd        - broad GERD (any GERD/reflux record, >=2)
+#                (2) has_esophagitis - the erosive/oesophagitis subset, i.e. GERD
+#                                      records whose standard concept name contains
+#                                      "esophagitis"/"oesophagitis" (>=2). This is
+#                                      seeded by concept 4223293 (GERD WITH
+#                                      esophagitis) and its descendants.
 #
 # NOTE: This is a NEW file. It does not modify any existing notebook.
 #
 # PRE-FLIGHT (do this in the AoU workspace before finalizing):
-#   In the All of Us Cohort Builder, search "gastroesophageal reflux", select the
-#   standard concept + descendants, and (optionally) paste the full seed concept
-#   set into the `concept_id IN (...)` clause below. The cb_criteria descendant
-#   expansion used here already captures all standard descendants of the seeds,
-#   so seeding with the two GERD standard concepts is sufficient in most cases;
-#   expanding the seed list only matters if Cohort Builder shows additional
-#   top-level GERD concepts not on the descendant path of these two.
+#   In the All of Us Cohort Builder, search "gastroesophageal reflux" AND
+#   "reflux esophagitis"/"erosive esophagitis", select the standard concepts +
+#   descendants, and (optionally) paste the full seed concept set into the
+#   `concept_id IN (...)` clause below. The cb_criteria descendant expansion used
+#   here already captures all standard descendants of the seeds. If you want to
+#   capture reflux/erosive esophagitis concepts that are NOT descendants of
+#   318800/4223293, add their seed concept IDs to ESOPHAGITIS_SEED_IDS below and
+#   include them in the concept_id IN (...) list.
 # -------------------------------------------------------------------------------
 
 # Force this notebook to use the v9 Controlled Tier CDR
@@ -26,8 +38,11 @@ library(tidyverse)
 library(bigrquery)
 
 # GERD seed concepts (standard SNOMED concepts). Descendants are expanded below.
-#   318800  - Gastroesophageal reflux disease
-#   4223293 - Gastroesophageal reflux disease with esophagitis
+#   318800  - Gastroesophageal reflux disease                    (broad GERD)
+#   4223293 - Gastroesophageal reflux disease with esophagitis   (oesophagitis subset seed)
+# Optional additional oesophagitis seeds to VERIFY/ADD in Cohort Builder if you
+# want reflux/erosive esophagitis not already captured as a GERD descendant:
+#   ESOPHAGITIS_SEED_IDS <- c(4223293 /*, reflux/erosive esophagitis concept ids */)
 # (verify / expand in Cohort Builder as noted in the header)
 
 # This query represents dataset "GERD Outcome" for domain "condition" and was
@@ -139,6 +154,22 @@ head(dataset_gerd_r9_condition_df, 5)
 # Quick look at which GERD concepts were captured by the descendant expansion.
 # Use this to confirm the pull matches your Cohort Builder GERD definition.
 dataset_gerd_r9_condition_df %>%
+  count(condition_concept_id, standard_concept_name, sort = TRUE) %>%
+  print(n = 50)
+
+# Flag the oesophagitis (erosive) subset by concept-name match. The downstream
+# analysis files use exactly this rule to build has_esophagitis, so this preview
+# lets you confirm the erosive subset before running the analyses.
+dataset_gerd_r9_condition_df <- dataset_gerd_r9_condition_df %>%
+  mutate(
+    is_esophagitis = grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)
+  )
+
+cat("\n--- Oesophagitis (erosive) subset preview ---\n")
+cat("Total GERD condition rows:", nrow(dataset_gerd_r9_condition_df), "\n")
+cat("Rows flagged as oesophagitis:", sum(dataset_gerd_r9_condition_df$is_esophagitis, na.rm = TRUE), "\n")
+dataset_gerd_r9_condition_df %>%
+  filter(is_esophagitis) %>%
   count(condition_concept_id, standard_concept_name, sort = TRUE) %>%
   print(n = 50)
 
