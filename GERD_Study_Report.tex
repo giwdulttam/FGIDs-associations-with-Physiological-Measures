@@ -626,6 +626,45 @@ medication-treated (severe) GERD. \\
 \end{table}
 
 %======================================================================
+\section{Concept-Set Construction in Depth}
+%======================================================================
+Because outcome and drug-class definitions rest entirely on the correctness of the concept sets, this
+section walks through the two Cohort Builder mechanisms the pulls rely on.
+
+\subsection{Condition descendant expansion (\code{cb_criteria})}
+The outcome pull does not enumerate GERD concept IDs by hand; it seeds two standard concepts and lets
+BigQuery expand the hierarchy. The nested query has three logical steps:
+\begin{enumerate}[leftmargin=1.5em,itemsep=1pt]
+  \item \textbf{Seed to hierarchy rows.} A subquery selects rows of \code{cb_criteria} whose
+  \code{concept_id} is a seed (318800 or 4223293) and whose \code{full_text} marks them as standard
+  ``rank-1'' entries, returning their hierarchy \code{id}s.
+  \item \textbf{Path match to descendants.} The outer \code{cb_criteria} scan keeps every standard,
+  selectable concept whose materialized \code{path} lies on, above, or below a seed id --- captured by
+  the four \code{LIKE}/equality patterns on \code{path} --- which is exactly the seed's descendant
+  subtree in the SNOMED hierarchy.
+  \item \textbf{Restrict to condition occurrences for Fitbit-sharers.} The resulting concept set filters
+  \code{condition_occurrence}, and a \code{cb_search_person} subquery restricts to participants with
+  \code{has_fitbit = 1}.
+\end{enumerate}
+This is why re-filtering the pulled table on only the two seed IDs (Section~\ref{sec:subtlety}) is wrong:
+the pulled rows carry \emph{descendant} concept IDs, and the two seeds are only the roots of the subtree.
+
+\subsection{Drug ancestor rollup (\code{concept_ancestor})}
+The pharmacologics pull uses the complementary mechanism. A double join through \code{concept_ancestor}
+maps each \code{drug_exposure} to its ancestor drug classes, and the query keeps rows whose
+\code{ancestor_concept_id} is a target class (PPI \code{21600095} or $H_2$RA \code{21600096}). This rolls
+individual products (ingredients, brands, formulations) up to the class level, so the treated-GERD flag
+responds to any PPI or $H_2$RA regardless of the specific product coded.
+
+\subsection{Verification workflow}
+Both concept sets are seeds to be confirmed in the Cohort Builder before a production run. The outcome
+upload prints a \code{count()} of the captured concepts and the size of the name-matched oesophagitis
+subset, so the analyst can confirm the definition matches the intended clinical scope. If additional
+reflux/erosive-esophagitis concepts sit outside the two GERD seeds' subtree, their seed IDs are added to
+the \code{concept_id IN (\ldots)} list; the name-match rule for \code{has_esophagitis} then picks them up
+automatically.
+
+%======================================================================
 \section{Exposure Definitions}
 %======================================================================
 
@@ -681,6 +720,59 @@ in mutually-adjusted pairs).}
 A stricter sensitivity population retains only sleep-nights that coincide with a valid activity day
 (a same-day intraday-steps record), yielding \code{sleep_activity_overlap_df} and a parallel summary.
 This isolates participants with concurrently well-measured sleep and activity.
+
+%======================================================================
+\section{Fitbit Measurement and Reliability}
+%======================================================================
+The credibility of an objectively-measured exposure rests on understanding how the device produces each
+metric and where it is fallible. This section documents the provenance of the sleep and activity streams
+and the corresponding cleaning choices.
+
+\subsection{Sleep staging}
+Fitbit estimates sleep stages (light, deep, REM) and wake from movement (accelerometry) and
+photoplethysmography-derived heart-rate variability during a main sleep episode. The device reports, per
+night, minutes asleep, minutes in bed, minutes awake, minutes restless, and minutes in each stage.
+Stage estimates are less reliable than the coarser asleep/awake distinction, which is why the analysis
+models each stage \emph{separately} as a quartile and does not, for example, sum stages into a single
+composite that would propagate stage-classification error. Nights of non-main sleep (naps) are excluded
+because their architecture differs systematically from nocturnal sleep. The $(0, 1440]$-minute validity
+window removes records that are physiologically impossible and typically reflect device or sync errors.
+Averaging over $\geq 180$ nights suppresses night-to-night noise so that each participant's quartile
+placement reflects a habitual pattern rather than a few unusual nights.
+
+\subsection{Sleep efficiency}
+Sleep efficiency, minutes asleep divided by minutes in bed, is a unitless summary of sleep continuity
+that is more robust than any single stage because it depends only on the well-measured asleep/in-bed
+quantities. It is defined only when minutes in bed is positive, avoiding division-by-zero artifacts.
+
+\subsection{Steps, wear time, and valid days}
+Daily steps come from the intraday-steps stream, which also yields an estimate of \emph{wear hours} per
+day. A day is counted as valid only when wear time is $\geq 10$ hours and the step total lies between
+100 and 45{,}000; the lower step bound removes non-wear or malfunction days that would masquerade as
+extreme sedentariness, and the upper bound removes implausible sensor spikes. Requiring $\geq 30$ valid
+days yields a stable habitual activity profile while retaining a large sample.
+
+\subsection{Activity-zone minutes}
+The daily activity stream partitions each day into sedentary, lightly active, fairly active, and very
+active minutes based on metabolic-equivalent thresholds inferred from movement and heart rate. The
+analysis models each zone as its own quartile and additionally forms a total-active-minutes quartile
+(the sum of the three active zones), so that both the \emph{intensity distribution} and the
+\emph{overall active volume} are represented. Zone minutes are computed only on valid days, so that a
+low active-minute count reflects genuine inactivity rather than device non-wear.
+
+\subsection{Corrected maximum heart rate}
+The corrected maximum daily heart rate is drawn from a pre-computed summary
+(\code{R9_max_hr_minute_all_days_df.rds}) that addresses artifacts in the raw minute-level maxima. It
+serves as a cardiovascular-fitness and autonomic proxy in the activity set. Because that summary is a
+separate artifact, the exposure is guarded: if the file is absent, the max-HR quartile is simply omitted
+and the remaining activity exposures proceed unaffected.
+
+\subsection{Implications for interpretation}
+Two measurement facts shape interpretation. First, wearable exposures are \emph{habitual averages}, so
+the estimands concern long-run typical sleep and activity, not acute perturbations. Second, exposure
+measurement error, being device-based and plausibly non-differential with respect to EHR-coded reflux,
+would tend to bias quartile contrasts toward the null; observed associations are therefore likely to be
+conservative.
 
 %======================================================================
 \section{Combined Exposure Design}
@@ -850,6 +942,49 @@ covariates are added because they are clinically entangled with GERD: peptic ulc
 $\geq 2$ distinct-dates rule so that GERD and IBS can co-occur while the temporal rule stays consistent.
 
 %======================================================================
+\section{Covariate-by-Covariate Rationale}
+%======================================================================
+Each covariate earns its place by lying on a backdoor path between the wearable exposures and reflux.
+This section records the specific justification for each, so the adjustment set can be scrutinized
+individually rather than as a block.
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+  \item \textbf{Age.} Reflux prevalence and coding rise with age, and sleep architecture and activity
+  both change across the lifespan; modeled as a five-level category to allow non-linear age effects.
+  \item \textbf{Sex at birth.} Sex differences exist in reflux presentation, erosive-disease risk, and
+  in sleep and activity patterns.
+  \item \textbf{Race and ethnicity.} Correlate with both health-care access/coding and behavioral
+  patterns; collapsed to protect small cells while retaining the major contrasts.
+  \item \textbf{Education and income.} Socio-economic status shapes device access, health-care
+  engagement (hence diagnosis probability), and lifestyle; both are carried with an explicit
+  Unknown/Missing level.
+  \item \textbf{Smoking.} Nicotine lowers lower-esophageal-sphincter tone (a direct reflux mechanism)
+  and degrades sleep; a classic confounder of any sleep--reflux association.
+  \item \textbf{Alcohol.} Relaxes the sphincter, disrupts sleep architecture, and associates with
+  activity; modeled on the daily-quantity Likert scale.
+  \item \textbf{Median BMI.} The single most important confounder: adiposity raises intra-abdominal
+  pressure and promotes reflux and hiatal herniation while also shortening sleep and reducing activity.
+  \item \textbf{Charlson Comorbidity Index.} Captures residual multimorbidity that drives both
+  health-care contact (and thus coding) and reduced sleep/activity; categorical by default.
+  \item \textbf{Depression and anxiety.} Alter sleep, elevate visceral symptom reporting, and associate
+  with reflux diagnosis; adjusted directly rather than folded into the Charlson index.
+  \item \textbf{Peptic ulcer disease.} Shares acid pathophysiology and PPI treatment with GERD; a GERD-
+  specific covariate absent from the antecedent IBS study.
+  \item \textbf{Irritable bowel syndrome.} Frequently overlaps GERD and disturbs sleep; entered as a
+  covariate (not the outcome), rebuilt from the condition table under the same temporal rule.
+  \item \textbf{Diabetes, hypertension, heart failure, MI, stroke, COPD, sleep apnea.} Cardiometabolic
+  and respiratory comorbidities that pattern both physiology and health-care coding; sleep apnea in
+  particular is strongly linked to both disturbed sleep and reflux.
+  \item \textbf{Medication-use flags.} Beta-blockers, calcium-channel blockers, stimulants,
+  antidepressants, antipsychotics, anxiolytics, and hypnotics all affect measured sleep and heart rate
+  and may mark conditions linked to reflux; each is a $\geq 2$-date pre-exposure flag.
+\end{itemize}
+
+\noindent Acid-suppression therapy is deliberately \emph{absent} from this list: as a probable mediator
+(downstream of reflux), it is used only to define the treated-GERD sensitivity outcome, never as an
+adjustment covariate.
+
+%======================================================================
 \section{The Shared Modeling Engine and Descriptive Statistics}
 %======================================================================
 
@@ -880,6 +1015,77 @@ all comorbidities, PUD, IBS, medications, and median BMI. Chi-square tests are a
 collapsed categorical demographics, Benjamini--Hochberg FDR $q$-values are added, and emphasis is placed
 on $q$ rather than raw $p$. Race, ethnicity, sex, education, and income are collapsed to protect small
 cells and improve legibility.
+
+%======================================================================
+\section{Reporting Conventions and Output Structure}
+%======================================================================
+Each configuration produces a fixed set of outputs in a fixed order, so that the six configurations can
+be read side by side. This section documents that structure.
+
+\subsection{Per-configuration outputs}
+For each outcome the engine emits, in order: (1) a stratified descriptive table
+(\code{tbl_summary}) with counts/percentages for categorical variables, medians/IQRs for continuous
+variables, a Missing row where applicable, chi-square tests for the collapsed demographics, and FDR
+$q$-values; (2) a univariable table (\code{tbl_uvregression}) of unadjusted ORs with 95\% CIs for every
+exposure and covariate; (3) a stacked multivariable table (\code{tbl_stack}) with, per exposure, a full
+model and a backward model side by side (\code{tbl_merge}), each footnoted with its complete-case $N$;
+and (4) a console diagnostics block. The combined file additionally emits the mutually-adjusted
+sleep$\times$activity tables.
+
+\subsection{Numbers and rounding}
+Odds ratios and confidence bounds are reported to two decimal places; percentages to one; the AUC to
+three. Cell sizes below the \emph{All of Us} small-count reporting threshold must be suppressed or
+combined before any output leaves the workspace --- a reason the demographic categories are collapsed
+in \code{prep_modeling_df()}.
+
+\subsection{What is fixed versus what varies}
+Across the six configurations the estimator, covariate set, reference levels, missing-data handling,
+and table format are \emph{fixed} by the shared helper. Only three things \emph{vary}: the cohort (which
+eligibility gate applies), the exposure list handed to the engine, and the outcome column the driver
+stratifies on. This separation is what licenses direct comparison of, say, the sleep effect on GERD (C1)
+with the sleep effect on oesophagitis (C2) or the activity effect on GERD (C3).
+
+%======================================================================
+\section{Statistical Preliminaries and Notation}
+%======================================================================
+This section fixes the notation and the elementary quantities used throughout, so that later sections
+can refer to them without ambiguity.
+
+\subsection{Odds, odds ratios, and the logit}
+For a binary outcome $Y \in \{0,1\}$ with $p = \Pr[Y=1]$, the \emph{odds} are $p/(1-p)$ and the
+\emph{logit} (log-odds) is $\logit(p) = \log\{p/(1-p)\}$, a monotone map from $(0,1)$ to
+$(-\infty,\infty)$ that makes a linear predictor sensible. The \emph{odds ratio} (OR) comparing two
+covariate settings is the ratio of their odds; an OR of $1$ denotes no association, $<1$ lower odds,
+and $>1$ higher odds. In a logistic model each coefficient $\beta$ satisfies $e^{\beta} = \text{OR}$ per
+unit change in its covariate, holding the others fixed; for a quartile contrast $e^{\beta_j}$ is the OR
+of quartile $j$ versus the Q1 reference.
+
+\subsection{The model and its likelihood}
+With covariate vector $x_i$ and parameter vector $\theta = (\beta_0, \boldsymbol\beta, \boldsymbol\gamma)$,
+\[
+p_i(\theta) = \frac{1}{1 + \exp(-x_i^\top \theta)}, \qquad
+\ell(\theta) = \sum_{i=1}^{N}\big\{ y_i \log p_i(\theta) + (1-y_i)\log(1-p_i(\theta)) \big\}.
+\]
+The maximum-likelihood estimate $\hat\theta$ maximizes $\ell$; R's \code{glm} solves the score equations
+by iteratively reweighted least squares. Standard errors come from the inverse observed information,
+and a Wald 95\% confidence interval for an OR is $\exp(\hat\beta \pm 1.96\,\widehat{\mathrm{SE}}(\hat\beta))$.
+Confidence intervals are reported on the OR scale throughout.
+
+\subsection{Discrimination, calibration, and fit}
+Model \emph{discrimination} --- the ability to rank cases above non-cases --- is summarized by the area
+under the receiver-operating-characteristic curve (AUC, equivalently the concordance $c$-statistic),
+computed by \code{pROC}; $0.5$ is chance and $1.0$ is perfect. Because the outcomes are relatively rare,
+AUC is expected to be modest and is used comparatively (full vs backward model, across exposures) rather
+than as an absolute performance claim. Nested models are compared by AIC during backward selection.
+Separation and sparsity are monitored through coefficient standard errors, as described in the
+diagnostics.
+
+\subsection{Reference levels and contrasts}
+All quartile exposures use Q1 (lowest) as the reference; all categorical covariates use an explicit,
+clinically natural reference (\code{"<30"} for age, \code{"Non-Hispanic"} for ethnicity, \code{"0"} for
+the Charlson category, \code{"Non-smoker"} for smoking). Fixing references in one place --- the shared
+helper's \code{prep_modeling_df()} --- guarantees that every configuration reports contrasts against the
+same baseline, so ORs are comparable across the sleep, activity, and combined analyses.
 
 %======================================================================
 \section{Univariable and Multivariable Analysis}
@@ -1094,6 +1300,47 @@ cohort. Sparse covariate$\times$outcome cells are exactly what the separation di
 catch, and backward-AIC can drop unstable terms while the exposure is retained.
 
 %======================================================================
+\section{Assumed Causal Structure}
+%======================================================================
+The adjustment set is not chosen empirically (for example, by stepwise inclusion of ``significant''
+covariates) but from an explicit, if informal, causal diagram. Stating the assumed structure makes the
+identification strategy auditable and clarifies which variables must be adjusted for and which must not.
+
+\subsection{Paths the design intends to block}
+The exposures (sleep, activity) and the outcomes (GERD, oesophagitis) share several common causes that
+open backdoor paths and would bias an unadjusted association:
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt]
+  \item \textbf{Adiposity} $\rightarrow$ both worse sleep/less activity and more reflux (pressure
+  gradient). Adjusted via median BMI.
+  \item \textbf{Age, sex, race, ethnicity, socioeconomic status} $\rightarrow$ both behavior and
+  health-care coding. Adjusted via the demographic and SES covariates.
+  \item \textbf{Psychiatric comorbidity} (depression, anxiety) $\rightarrow$ both sleep and
+  symptom reporting. Adjusted directly.
+  \item \textbf{General multimorbidity and GI comorbidity} (Charlson, PUD, IBS) $\rightarrow$ both
+  activity/sleep and reflux coding. Adjusted directly.
+  \item \textbf{Health-care surveillance intensity} $\rightarrow$ both wearable adoption and diagnosis
+  probability. Partially blocked by SES and comorbidity adjustment.
+\end{itemize}
+
+\subsection{Paths the design intends \emph{not} to block}
+Two categories are deliberately excluded from the primary adjustment set:
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt]
+  \item \textbf{Mediators} of the exposure$\rightarrow$outcome effect. Acid-suppression therapy plausibly
+  lies \emph{downstream} of reflux; conditioning on it would be over-adjustment and could induce
+  collider bias. It is therefore used only to \emph{define} the treated-GERD sensitivity outcome, never
+  as a covariate.
+  \item \textbf{Colliders.} No variable that is a common \emph{effect} of exposure and outcome is
+  conditioned on, since doing so would open a non-causal path.
+\end{itemize}
+
+\subsection{The reverse-causation edge}
+The one edge the covariate set cannot address is the direct outcome$\rightarrow$exposure arrow: nocturnal
+reflux fragments sleep. Adjustment cannot remove a reverse-causal effect; only design can. The
+post-Fitbit temporal outcome definition addresses it by requiring the outcome's EHR appearance to follow
+the exposure-measurement window, and its concordance with the primary estimate is reported as the key
+robustness check.
+
+%======================================================================
 \section{Sensitivity Analyses}
 \label{sec:sensitivity}
 %======================================================================
@@ -1206,6 +1453,22 @@ Higher corrected max HR & $<1$ (fitness proxy) & Autonomic/cardiovascular fitnes
 Predictions are expected to be directionally similar for GERD and oesophagitis, with acid-contact
 pathways potentially stronger for the erosive subset and perceptual pathways stronger for broad GERD.}
 \end{table}
+
+\subsection{A worked example of reading one output row}
+Suppose the C1 (sleep, broad GERD) stacked table reports, for \code{min_asleep_quartile}, adjusted odds
+ratios of $0.94$ (Q2), $0.88$ (Q3), and $0.82$ (Q4) versus Q1, with the Q4 95\% CI $(0.74, 0.91)$ and a
+complete-case $N$ of, say, $18{,}500$. This would be read as follows: participants in the highest
+quartile of average nightly sleep have about $18\%$ lower adjusted odds of a GERD phenotype than those in
+the lowest quartile; the interval excludes $1$, so the association is statistically distinguishable from
+the null at the conventional level; and the monotone decline $0.94 \rightarrow 0.88 \rightarrow 0.82$
+across Q2--Q4 is a dose--response signature that strengthens (though cannot prove) a protective reading.
+The same row for C2 (oesophagitis) might show a similar direction with a wider interval, reflecting the
+smaller case count; a materially \emph{stronger} Q4 effect for oesophagitis than for broad GERD would
+point toward an acid-contact-time pathway, whereas a weaker one would point toward a
+symptom-perception pathway. The backward-model column indicates whether the estimate is stable when
+non-contributing covariates are dropped, and the footnoted $N$ makes the complete-case sample explicit.
+This single-row reading generalizes to every exposure in every configuration, because all six are
+produced by the same engine.
 
 Three internal-consistency checks structure interpretation. First, \emph{concordance across outcomes}:
 if an exposure association is directionally consistent for broad GERD and for the erosive oesophagitis
@@ -1334,6 +1597,41 @@ harmonized covariates, and a common engine --- is what makes such comparisons va
 confounded by differing analytic choices. The GERD suite's two nested outcomes add a within-disorder
 axis (symptom-coded vs erosive) that the other studies do not have, giving the portfolio its first
 built-in objective-injury comparator.
+
+%======================================================================
+\section{Robustness, Triangulation, and Pre-Specification}
+%======================================================================
+The strength of the design is less in any single estimate than in the pattern of agreement across
+deliberately varied analyses. This section states the pre-specified robustness and triangulation plan.
+
+\subsection{Triangulation across three axes}
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item \textbf{Across outcomes.} A sleep or activity association that holds for both broad GERD and the
+  erosive oesophagitis subset is more credible than one that appears for only the symptom-coded outcome,
+  because the erosive phenotype reflects objective mucosal injury.
+  \item \textbf{Across exposure domains.} Agreement among the sleep-only (C1/C2), activity-only (C3/C4),
+  and mutually-adjusted combined (C5/C6) estimates indicates that neither domain is merely a proxy for
+  the other; the mutually-adjusted models are the decisive test of independent contribution.
+  \item \textbf{Across case definitions.} Agreement between the primary $\geq 2$-record definition and
+  the stricter distinct-date, temporal, and treated-disease definitions indicates the association is not
+  an artifact of a particular phenotype rule.
+\end{enumerate}
+
+\subsection{Pre-specification}
+The exposures, the two outcomes, the adjustment set, the reference levels, the quartile
+parameterization, the full-plus-backward modeling procedure, and the sensitivity analyses are all fixed
+in code \emph{before} estimation, in the shared helper. Because the helper is the single source of these
+choices, there is no opportunity for per-configuration analytic drift or outcome-dependent covariate
+selection; the backward step is a parsimony check layered on top of a pre-specified full model, not a
+data-driven search for the reported estimate.
+
+\subsection{What would count as a robust finding}
+A robust protective sleep association, for instance, would show: an aOR below $1$ for the top sleep
+quartile in both C1 and C2; a monotone quartile gradient; survival of adjustment for activity in C5/C6;
+concordance with the post-Fitbit temporal definition; and stability between the full and backward
+models. A finding meeting only some of these criteria would be reported as suggestive and interpreted
+with the corresponding caution. This graded standard, applied identically across all six configurations
+by construction, is the payoff of the shared-engine architecture.
 
 %======================================================================
 \section{Conclusion}
@@ -1664,6 +1962,128 @@ Data availability & Confidential; remains in the secure workspace. \\
 \end{tabular}
 \caption{STROBE-aligned reporting and reproducibility checklist.}
 \end{table}
+
+%======================================================================
+\section{Appendix H: Helper Function Reference}
+%======================================================================
+The shared engine (\code{GERD Analysis Helpers R9.R}) exposes the following objects and functions. This
+reference documents each one's role, inputs, and outputs.
+
+\begin{longtable}{@{}p{4.9cm}p{8.6cm}@{}}
+\toprule
+\textbf{Object / function} & \textbf{Role, inputs, and output} \\
+\midrule
+\endhead
+\code{GERD_OUTCOMES} & Named list of the two outcomes; each has \code{col} (the data-frame column) and
+\code{labels} (reference, case). Drives the both-outcome loop. \\
+\code{SLEEP_EXPOSURES} & Character vector of the eight sleep quartile column names. \\
+\code{ACTIVITY_EXPOSURES} & Character vector of the seven activity quartile column names. \\
+\code{GERD_BINARY_COVARS} & Binary covariates shown as No/Yes and used as 0/1 predictors. \\
+\code{GERD_LABELS} & Named character vector mapping variable names to display labels. \\
+\code{GERD_ADJ_COVARS} & The adjustment covariate vector (adds \code{has_pud}, \code{has_ibs}; CCI categorical). \\
+\code{prep_modeling_df(df, exposures)} & Input: a final analysis frame and its exposure names. Builds
+collapsed factor covariates and relevels quartiles to Q1--Q4 (Q1 reference). Output: the same frame with
+model-ready factors. \\
+\code{descriptive_table(df, outcome_col, outcome_labels, exposures, extra_cont)} & Builds a
+\code{tbl_summary} stratified by the outcome with chi-square tests and FDR $q$-values. \\
+\code{univariate_table(df, outcome_col, outcome_labels, exposures)} & Unadjusted ORs for exposures and
+covariates via \code{tbl_uvregression}. \\
+\code{run_models_for_outcome(df, outcome_col, outcome_labels, exposures, covars, cci_label)} & Fits, per
+exposure, a full model and a backward-AIC model (exposure forced in); returns a named list with $N$, AUC,
+VIF, merged tables, and quick exposure rows. \\
+\code{stack_results(results)} & Stacks the per-exposure merged tables into one \code{tbl_stack}. \\
+\code{run_diagnostics(results, modeling_df, outcome_col, adj_covars)} & Runs the five assumption checks. \\
+\code{analyze_all_outcomes(modeling_df, exposures, covars, cci_label, extra_cont)} & Driver: loops both
+outcomes, calling the four routines above; returns a nested list keyed by outcome. \\
+\bottomrule
+\end{longtable}
+
+%======================================================================
+\section{Appendix I: Data Dictionary of the Final Analysis Frames}
+%======================================================================
+The three \code{R9_final_analysis_*_gerd_df.rds} frames are one row per participant. They share the
+covariate and outcome columns below; they differ only in which exposure block is present (sleep,
+activity, or both).
+
+\begin{longtable}{@{}p{4.4cm}p{2.4cm}p{6.4cm}@{}}
+\toprule
+\textbf{Column(s)} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\endhead
+\code{person_id} & chr & Participant identifier (unique per row). \\
+\code{has_gerd}, \code{has_esophagitis} & logical & The two primary outcomes. \\
+\code{has_post_fitbit_gerd}, \code{severe_gerd_binary} & logical & Sensitivity outcomes (sleep file). \\
+\code{min_*_quartile} (8) & int/factor & Sleep exposures (sleep and combined frames). \\
+\code{step_quartile}, \code{*_active_quartile}, \code{sedentary_quartile}, \code{max_hr_*_quartile} & int/factor & Activity exposures (activity and combined frames). \\
+\code{avg_min_*}, \code{avg_*_active_min}, \code{avg_daily_steps}, \code{avg_sedentary_min} & num & Continuous exposure means. \\
+\code{n_valid_nights}, \code{n_valid_days} & int & Coverage counts. \\
+\code{age_at_fitbit_start}, \code{age_cat} & num/factor & Age and category. \\
+\code{race}, \code{ethnicity}, \code{sex_at_birth} & chr & Raw demographics (collapsed in the engine). \\
+\code{education_response}, \code{income_response} & chr & Raw SES survey responses. \\
+\code{alcohol_likert_final}, \code{smoking_binary} & num & Behavioral covariates. \\
+\code{median_bmi} & num & Median BMI covariate. \\
+\code{cci_score}, \code{cci_cat} & int/factor & Charlson index (continuous and categorical). \\
+\code{has_pud}, \code{has_ibs} & logical & GI covariates. \\
+\code{has_depression} \ldots \code{has_sleep_apnea} & logical & Comorbidity covariates. \\
+\code{on_beta_blocker} \ldots \code{on_hypnotics} & logical & Medication-use covariates. \\
+\bottomrule
+\end{longtable}
+
+%======================================================================
+\section{Appendix J: Software and Package Reference}
+%======================================================================
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}p{3.0cm}p{10.4cm}@{}}
+\toprule
+\textbf{Package} & \textbf{Role in the pipeline} \\
+\midrule
+\code{tidyverse} & Data manipulation (\code{dplyr}, \code{tidyr}, \code{purrr}, \code{stringr}, \code{forcats}, \code{ggplot2}). \\
+\code{lubridate} & Date handling for temporal covariate and BMI windows. \\
+\code{rlang} & Tidy-evaluation helpers (dynamic outcome/column injection in the engine). \\
+\code{gtsummary} & Descriptive (\code{tbl_summary}), univariable (\code{tbl_uvregression}), and adjusted (\code{tbl_regression}, \code{tbl_merge}, \code{tbl_stack}) tables with FDR $q$-values. \\
+\code{broom} & Tidies model output into data frames (quick exposure-row extraction). \\
+\code{MASS} & Backward AIC selection (\code{stepAIC}). \\
+\code{car} & Generalized variance inflation factors (\code{vif}). \\
+\code{pROC} & ROC AUC (discrimination). \\
+\code{bigrquery} & BigQuery execution for the outcome and drug pulls. \\
+\bottomrule
+\end{tabular}
+\caption{R packages and their roles. The shared helper installs any that are missing on first load.}
+\end{table}
+
+%======================================================================
+\section{Appendix K: Glossary of Statistical Terms}
+%======================================================================
+\begin{longtable}{@{}p{4.4cm}p{9.1cm}@{}}
+\toprule
+\textbf{Term} & \textbf{Definition as used here} \\
+\midrule
+\endhead
+Odds & $p/(1-p)$ for outcome probability $p$. \\
+Odds ratio (OR) & Ratio of odds between two covariate settings; $1$ = no association. \\
+Adjusted OR (aOR) & OR from a multivariable model, holding covariates fixed. \\
+Logit & Log-odds, $\log\{p/(1-p)\}$; the link function of logistic regression. \\
+Reference level & The category (e.g. Q1) against which other levels' ORs are computed. \\
+Quartile & One of four equal-frequency groups (\code{ntile(x,4)}); Q1 lowest, Q4 highest. \\
+Maximum likelihood & Estimation by maximizing the probability of the observed data. \\
+Wald confidence interval & $\exp(\hat\beta \pm 1.96\,\mathrm{SE})$ on the OR scale. \\
+Complete-case analysis & Fitting on rows with no missing model variable; the $N$ is reported per model. \\
+AIC & Akaike Information Criterion; balances fit and parameter count in backward selection. \\
+Backward selection & Iterative covariate removal by AIC, with the exposure forced to remain. \\
+AUC / $c$-statistic & Area under the ROC curve; probability a case outranks a non-case (0.5 = chance). \\
+VIF / GVIF & (Generalized) variance inflation factor; multicollinearity diagnostic. \\
+Perfect separation & A covariate perfectly predicts the outcome; flagged by very large standard errors. \\
+Cook's distance & Influence measure; values above $4/N$ flag potentially influential rows. \\
+Box--Tidwell test & Tests linearity of a continuous covariate in the logit via an $x\log x$ term. \\
+FDR $q$-value & Benjamini--Hochberg false-discovery-rate analogue of a $p$-value under multiplicity. \\
+Confounder & A common cause of exposure and outcome; adjusted for. \\
+Mediator & A variable on the causal path from exposure to outcome; not adjusted for (over-adjustment). \\
+Collider & A common effect of two variables; conditioning on it induces spurious association. \\
+Reverse causation & Outcome influences the measured exposure; addressed by the temporal outcome. \\
+\bottomrule
+\end{longtable}
 
 \vspace{1em}
 \noindent\rule{\linewidth}{0.4pt}\\
