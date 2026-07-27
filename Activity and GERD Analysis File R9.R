@@ -28,6 +28,10 @@ install.packages("glue", repos = "https://cloud.r-project.org/")
 install.packages("gtsummary")
 library(tidyverse); library(glue); library(gtsummary); library(broom); library(lubridate)
 
+# Shared modeling + manuscript-output engine (sourced up front: provides
+# build_gerd_outcomes(), apply_primary_outcome_def(), and the table/figure fns).
+source("GERD Analysis Helpers R9.R")
+
 # --- Load shared R9 infrastructure --------------------------------------------
 R9_person_df                <- readRDS("R9_person_df.rds")
 R9_survey_df                <- readRDS("R9_survey_df.rds")
@@ -97,21 +101,11 @@ if (file.exists("R9_max_hr_minute_all_days_df.rds")) {
 # ==============================================================================
 # 3) OUTCOMES (identical definitions to the sleep analysis; exposure-agnostic)
 # ==============================================================================
-R9_gerd_status <- R9_gerd_outcome %>% group_by(person_id) %>%
-  summarise(has_gerd = n() >= 2, .groups = "drop")
-R9_esophagitis_status <- R9_gerd_outcome %>%
-  filter(grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)) %>%
-  group_by(person_id) %>% summarise(has_esophagitis = n() >= 2, .groups = "drop")
-
-# Temporal (post-activity-Fitbit) GERD sensitivity flag
-gerd_post_fitbit_activity <- R9_gerd_outcome %>%
-  select(person_id, condition_start_datetime) %>%
-  left_join(first_fitbit_date_df, by = "person_id") %>%
-  group_by(person_id) %>%
-  mutate(first_gerd_date = min(as.Date(condition_start_datetime))) %>%
-  filter(first_gerd_date >= (first_fitbit_date + 180)) %>%
-  summarise(n_post = n(), .groups = "drop") %>%
-  filter(n_post >= 2) %>% mutate(has_post_fitbit_gerd = TRUE)
+# Both phenotypes x both case definitions, anchored on the first ACTIVITY date.
+# GERD_PRIMARY_DEF (in the helper) selects which becomes the primary outcome.
+R9_gerd_outcome_status <- build_gerd_outcomes(
+  R9_gerd_outcome, first_fitbit_date_df, "first_fitbit_date")
+saveRDS(R9_gerd_outcome_status, "R9_gerd_outcome_status_activity.rds")
 
 # ==============================================================================
 # 4) Behavioral / SES survey covariates (shared logic)
@@ -247,9 +241,7 @@ final_analysis_activity_gerd_df <- valid_population %>%
   left_join(R9_avg_wear_hours_df, by = "person_id") %>%
   left_join(R9_max_hr_minute_all_days_df, by = "person_id") %>%
   left_join(demographics, by = "person_id") %>%
-  left_join(R9_gerd_status, by = "person_id") %>%
-  left_join(R9_esophagitis_status, by = "person_id") %>%
-  left_join(gerd_post_fitbit_activity, by = "person_id") %>%
+  left_join(R9_gerd_outcome_status, by = "person_id") %>%
   left_join(alcohol_summary_df %>% select(person_id, alcohol_likert_final), by = "person_id") %>%
   left_join(smoking_status %>% select(person_id, smoking_binary), by = "person_id") %>%
   left_join(comorbidity_status_activity_gerd_df, by = "person_id") %>%
@@ -264,9 +256,11 @@ final_analysis_activity_gerd_df <- valid_population %>%
   left_join(bmi_covariates_activity_df, by = "person_id") %>%
   left_join(education_df, by = "person_id") %>%
   left_join(income_df, by = "person_id") %>%
-  mutate(has_gerd = replace_na(has_gerd, FALSE),
-         has_esophagitis = replace_na(has_esophagitis, FALSE),
-         has_post_fitbit_gerd = replace_na(has_post_fitbit_gerd, FALSE))
+  mutate(across(starts_with("has_gerd"),        ~replace_na(., FALSE)),
+         across(starts_with("has_esophagitis"), ~replace_na(., FALSE)))
+
+# Select the primary outcome definition (see GERD_PRIMARY_DEF in the helper)
+final_analysis_activity_gerd_df <- apply_primary_outcome_def(final_analysis_activity_gerd_df)
 
 binary_vars <- c("has_gerd","has_esophagitis","has_pud","has_ibs",
                  "has_depression","has_anxiety","has_diabetes","has_hypertension",
@@ -274,7 +268,7 @@ binary_vars <- c("has_gerd","has_esophagitis","has_pud","has_ibs",
                  "on_beta_blocker","on_calcium_blocker","on_stimulants",
                  "on_antidepressants","on_antipsychotics","on_anxiolytics","on_hypnotics")
 final_analysis_activity_gerd_df <- final_analysis_activity_gerd_df %>%
-  mutate(across(all_of(binary_vars), ~replace_na(., FALSE)))
+  mutate(across(any_of(binary_vars), ~replace_na(., FALSE)))
 
 # Integer activity quartiles (1..4); helper factorizes to Q1..Q4 (Q1 reference)
 final_analysis_activity_gerd_df <- final_analysis_activity_gerd_df %>%
@@ -297,19 +291,21 @@ cat("  Oesophagitis cases:", sum(final_analysis_activity_gerd_df$has_esophagitis
 # ==============================================================================
 # 9) MODELING -- both outcomes through the shared engine
 # ==============================================================================
-source("GERD Analysis Helpers R9.R")
-
 activity_exposures_present <- intersect(ACTIVITY_EXPOSURES, names(final_analysis_activity_gerd_df))
 modeling_df_activity <- prep_modeling_df(final_analysis_activity_gerd_df, activity_exposures_present)
 
+# Produces Table 1, Table 2, Supplement Tables 1-2, Figures 1-2 and a diagnostics
+# summary for BOTH outcomes. Files land in ./manuscript_output/ with "activity_".
 activity_results <- analyze_all_outcomes(
   modeling_df_activity,
-  exposures = activity_exposures_present,
-  extra_cont = c("n_valid_days","avg_daily_steps","avg_lightly_active_min","avg_fairly_active_min",
-                 "avg_very_active_min","avg_total_active_min","avg_sedentary_min",
-                 "avg_daily_wear_hours",
-                 intersect("avg_daily_max_hr_minute_all_days", names(modeling_df_activity)))
+  exposures    = activity_exposures_present,
+  coverage_var = "n_valid_days",
+  stub         = "activity"
 )
+
+# Numbers to quote in the manuscript's Results/diagnostics prose:
+str(activity_results$gerd$diagnostics)
+str(activity_results$esophagitis$diagnostics)
 
 message("Activity and GERD analysis complete: GERD + oesophagitis across ",
         length(activity_exposures_present), " activity exposures.")

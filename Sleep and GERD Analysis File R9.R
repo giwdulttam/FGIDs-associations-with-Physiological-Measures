@@ -36,6 +36,11 @@ library(lubridate)
 try(devtools::install_github("annisjs/typical.sleep"), silent = TRUE)
 suppressWarnings(try(library(typical.sleep), silent = TRUE))
 
+# Shared modeling + manuscript-output engine. Sourced UP FRONT because the outcome
+# builder (build_gerd_outcomes) and the primary-definition switch live there.
+# Configuration (primary outcome definition, Bonferroni, etc.) is set in that file.
+source("GERD Analysis Helpers R9.R")
+
 # --- Load shared R9 infrastructure (consistent R9_* naming throughout) ---------
 R9_person_df                     <- readRDS("R9_person_df.rds")
 R9_survey_df                     <- readRDS("R9_survey_df.rds")
@@ -148,45 +153,27 @@ saveRDS(sleep_summary_sensitivity, "R9_sleep_summary_sensitivity_gerd.rds")
 # 5) OUTCOMES: broad GERD and the oesophagitis (erosive) subset
 # ==============================================================================
 # The R9_gerd_outcome pull already restricts to GERD (concepts 318800/4223293 and
-# descendants), so every row is a GERD condition record. We compute has_gerd over
+# descendants), so every row is a GERD condition record. has_gerd is computed over
 # ALL rows; the oesophagitis subset is identified by concept-name match.
+#
+# build_gerd_outcomes() returns BOTH case definitions for BOTH phenotypes:
+#   *_ever        = >=2 records at any time
+#   *_post_fitbit = >=2 records AND first record >=180 days after the first Fitbit
+#                   night  <-- the rule used by the published IBS paper
+# Which one becomes the primary outcome is controlled by GERD_PRIMARY_DEF in
+# "GERD Analysis Helpers R9.R" (default "post_fitbit", i.e. paper-matching).
 GERD_CONCEPT_IDS <- c(318800, 4223293)  # documented seeds (pull is descendant-expanded)
 
-# (1) Broad GERD: >=2 GERD records
-R9_gerd_status <- R9_gerd_outcome %>%
-  group_by(person_id) %>%
-  summarise(has_gerd = n() >= 2, .groups = "drop")
-saveRDS(R9_gerd_status, "R9_gerd_status.rds")
+R9_gerd_outcome_status <- build_gerd_outcomes(
+  R9_gerd_outcome, first_fitbit_sleep_date_df, "first_fitbit_sleep_date")
+saveRDS(R9_gerd_outcome_status, "R9_gerd_outcome_status_sleep.rds")
 
-# (2) Oesophagitis subset: >=2 GERD records whose concept name is esophagitis
-gerd_esophagitis_rows <- R9_gerd_outcome %>%
-  filter(grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE))
-R9_esophagitis_status <- gerd_esophagitis_rows %>%
-  group_by(person_id) %>%
-  summarise(has_esophagitis = n() >= 2, .groups = "drop")
-saveRDS(R9_esophagitis_status, "R9_esophagitis_status.rds")
-
-cat("Broad GERD cases (>=2 records):", sum(R9_gerd_status$has_gerd, na.rm = TRUE), "\n")
-cat("Oesophagitis cases (>=2 records):", sum(R9_esophagitis_status$has_esophagitis, na.rm = TRUE), "\n")
-
-# Sensitivity outcome definitions (distinct dates + post-Fitbit temporal) for GERD
+# Additional specificity check kept for the sensitivity section: >=2 DISTINCT dates
 R9_gerd_status_dates <- R9_gerd_outcome %>%
   mutate(d = as.Date(condition_start_datetime)) %>%
   group_by(person_id) %>%
   summarise(has_gerd_dates = n_distinct(d) >= 2, .groups = "drop")
 saveRDS(R9_gerd_status_dates, "R9_gerd_status_dates.rds")
-
-gerd_post_fitbit_sleep <- R9_gerd_outcome %>%
-  select(person_id, condition_start_datetime) %>%
-  left_join(first_fitbit_sleep_date_df, by = "person_id") %>%
-  mutate(first_fitbit_sleep_date = as.Date(first_fitbit_sleep_date)) %>%
-  group_by(person_id) %>%
-  mutate(first_gerd_date = min(as.Date(condition_start_datetime))) %>%
-  filter(first_gerd_date >= (first_fitbit_sleep_date + 180)) %>%
-  summarise(n_post_fitbit_gerd = n(), .groups = "drop") %>%
-  filter(n_post_fitbit_gerd >= 2) %>%
-  mutate(has_post_fitbit_gerd = TRUE)
-saveRDS(gerd_post_fitbit_sleep, "R9_gerd_post_fitbit_sleep.rds")
 
 # ==============================================================================
 # 6) Behavioral / SES survey covariates
@@ -386,9 +373,7 @@ print(consort_counts)
 final_analysis_sleep_gerd_df <- valid_population_sleep %>%
   inner_join(sleep_summary_filtered, by = "person_id") %>%
   left_join(demographics, by = "person_id") %>%
-  left_join(R9_gerd_status, by = "person_id") %>%
-  left_join(R9_esophagitis_status, by = "person_id") %>%
-  left_join(gerd_post_fitbit_sleep, by = "person_id") %>%
+  left_join(R9_gerd_outcome_status, by = "person_id") %>%
   left_join(alcohol_summary_df %>% select(person_id, alcohol_likert_final), by = "person_id") %>%
   left_join(smoking_status %>% select(person_id, smoking_binary), by = "person_id") %>%
   left_join(comorbidity_status_sleep_gerd_df, by = "person_id") %>%
@@ -404,13 +389,14 @@ final_analysis_sleep_gerd_df <- valid_population_sleep %>%
   left_join(education_df, by = "person_id") %>%
   left_join(income_df, by = "person_id") %>%
   left_join(rx_post_gerd %>% select(person_id, treated_gerd_2dates), by = "person_id") %>%
-  mutate(
-    has_gerd             = replace_na(has_gerd, FALSE),
-    has_esophagitis      = replace_na(has_esophagitis, FALSE),
-    has_post_fitbit_gerd = replace_na(has_post_fitbit_gerd, FALSE),
-    treated_gerd_2dates  = replace_na(treated_gerd_2dates, FALSE),
-    severe_gerd_binary   = has_gerd & treated_gerd_2dates
-  )
+  mutate(across(starts_with("has_gerd"),        ~replace_na(., FALSE)),
+         across(starts_with("has_esophagitis"), ~replace_na(., FALSE)),
+         treated_gerd_2dates = replace_na(treated_gerd_2dates, FALSE))
+
+# Select the primary outcome definition (GERD_PRIMARY_DEF in the helper).
+# Creates has_gerd / has_esophagitis, and keeps the alternative as *_sens.
+final_analysis_sleep_gerd_df <- apply_primary_outcome_def(final_analysis_sleep_gerd_df) %>%
+  mutate(severe_gerd_binary = has_gerd & treated_gerd_2dates)
 
 # NA binary indicators -> FALSE
 binary_vars <- c("has_gerd","has_esophagitis","has_pud","has_ibs",
@@ -419,7 +405,7 @@ binary_vars <- c("has_gerd","has_esophagitis","has_pud","has_ibs",
                  "on_beta_blocker","on_calcium_blocker","on_stimulants",
                  "on_antidepressants","on_antipsychotics","on_anxiolytics","on_hypnotics")
 final_analysis_sleep_gerd_df <- final_analysis_sleep_gerd_df %>%
-  mutate(across(all_of(binary_vars), ~replace_na(., FALSE)))
+  mutate(across(any_of(binary_vars), ~replace_na(., FALSE)))
 
 # Integer sleep quartiles (1..4); helper factorizes to Q1..Q4 (Q1 reference)
 final_analysis_sleep_gerd_df <- final_analysis_sleep_gerd_df %>%
@@ -441,20 +427,25 @@ cat("  Oesophagitis cases:", sum(final_analysis_sleep_gerd_df$has_esophagitis), 
 cat("  Treated (severe) GERD cases:", sum(final_analysis_sleep_gerd_df$severe_gerd_binary), "\n")
 
 # ==============================================================================
-# 14) MODELING -- both outcomes through the shared engine
+# 14) MODELING -- both outcomes, manuscript-format output
 # ==============================================================================
-source("GERD Analysis Helpers R9.R")
-
 modeling_df_sleep <- prep_modeling_df(final_analysis_sleep_gerd_df, SLEEP_EXPOSURES)
 
-# Runs descriptive + univariable + multivariable + diagnostics for BOTH
-# has_gerd and has_esophagitis, for every sleep exposure.
+# Produces, for BOTH has_gerd and has_esophagitis:
+#   Table 1, Table 2 (with quartile cutoffs in the row labels),
+#   Supplement Table 1 (univariate), Supplement Table 2 (multivariable),
+#   Figure 1 (forest plots), Figure 2 (GVIF), and a diagnostics summary.
+# CSV/PNG files are written to ./manuscript_output/ with the "sleep_" prefix.
 sleep_results <- analyze_all_outcomes(
   modeling_df_sleep,
-  exposures = SLEEP_EXPOSURES,
-  extra_cont = c("n_valid_nights","avg_min_asleep","avg_min_in_bed","avg_min_awake",
-                 "avg_min_restless","avg_min_deep","avg_min_light","avg_min_rem","avg_sleep_efficiency")
+  exposures    = SLEEP_EXPOSURES,
+  coverage_var = "n_valid_nights",
+  stub         = "sleep"
 )
+
+# Numbers to quote in the manuscript's Results/diagnostics prose:
+str(sleep_results$gerd$diagnostics)
+str(sleep_results$esophagitis$diagnostics)
 
 # ------------------------------------------------------------------------------
 # 15) OPTIONAL: treated ("severe") GERD sensitivity outcome (if drug file present)
@@ -462,8 +453,12 @@ sleep_results <- analyze_all_outcomes(
 if (file.exists("R9_gerd_drug_df.rds")) {
   cat("\n### SENSITIVITY OUTCOME: treated (severe) GERD ###\n")
   sev_labels <- c("No treated GERD", "Treated GERD")
-  print(descriptive_table(modeling_df_sleep, "severe_gerd_binary", sev_labels, SLEEP_EXPOSURES))
-  print(univariate_table(modeling_df_sleep, "severe_gerd_binary", sev_labels, SLEEP_EXPOSURES))
+  print(manuscript_table1(modeling_df_sleep, "severe_gerd_binary", sev_labels,
+                          file_stub = "sleep_severe_gerd"))
+  print(manuscript_table2(modeling_df_sleep, "severe_gerd_binary", sev_labels, SLEEP_EXPOSURES,
+                          coverage_var = "n_valid_nights", file_stub = "sleep_severe_gerd"))
+  print(manuscript_supp_univariate(modeling_df_sleep, "severe_gerd_binary", sev_labels,
+                                   SLEEP_EXPOSURES, file_stub = "sleep_severe_gerd"))
   sev_res <- run_models_for_outcome(modeling_df_sleep, "severe_gerd_binary", sev_labels,
                                     SLEEP_EXPOSURES, caption_prefix = "Treated GERD")
   print(stack_results(sev_res))

@@ -146,7 +146,7 @@ The deliverables are all new R files; no existing notebook is edited:
   \item ``GERD Pharmacologics Data Upload.R'' -- an optional PPI/H2RA prescription pull supporting a medication-treated (``severe'') GERD sensitivity analysis, producing \code{R9_gerd_drug_df.rds}.
 \end{itemize}
 
-Primary analytic outputs are \code{R9_final_analysis_sleep_gerd_df.rds}, \code{R9_final_analysis_activity_gerd_df.rds}, and \code{R9_final_analysis_activity_sleep_gerd_df.rds}, together with the reusable status objects \code{R9_gerd_status.rds} and \code{R9_esophagitis_status.rds}. All estimates are adjusted odds ratios from logistic regression, quartile exposures are compared against Q1, and multiplicity across the many exposure--outcome contrasts is controlled with Benjamini--Hochberg false-discovery-rate (FDR) $q$-values. Because the design is cross-sectional, the primary estimates are associations; a pre-specified post-Fitbit temporal outcome definition serves as the strongest guard against reverse causation.
+Primary analytic outputs are \code{R9_final_analysis_sleep_gerd_df.rds}, \code{R9_final_analysis_activity_gerd_df.rds}, and \code{R9_final_analysis_activity_sleep_gerd_df.rds}, together with the reusable status objects \code{R9_gerd_status.rds} and \code{R9_esophagitis_status.rds}. All estimates are adjusted odds ratios from logistic regression, quartile exposures are compared against Q1, and multiplicity across the many exposure--outcome contrasts is controlled with the Bonferroni correction (matching the antecedent IBS paper; configurable to FDR). Because the design is cross-sectional, the primary estimates are associations; a pre-specified post-Fitbit temporal outcome definition serves as the strongest guard against reverse causation.
 
 \section{Introduction and Scientific Background}
 
@@ -182,7 +182,7 @@ Several partially overlapping mechanisms make both insufficient or fragmented sl
 
 Broad GERD ascertained from EHR condition codes is heterogeneous: it aggregates objective erosive disease with a large fraction of symptom-driven, non-erosive, and empirically treated reflux, and it is susceptible to differential coding by healthcare utilization and to misclassification of functional heartburn as GERD. Erosive oesophagitis (\code{has_esophagitis}), by contrast, requires documentation consistent with visible mucosal injury and thus anchors the analysis to a more objective, endoscopically grounded endpoint. Several considerations make it a valuable second phenotype rather than a redundant one.
 
-First, the two phenotypes plausibly load on different mechanisms: symptom-defined GERD is more strongly shaped by visceral hypersensitivity and central pain processing (sensitive to sleep-related hyperalgesia), whereas erosive disease is more directly a function of cumulative acid-contact time and barrier failure (sensitive to supine exposure, delayed clearance, and adiposity). Contrasting the exposure associations across the two outcomes is therefore mechanistically informative. Second, erosive oesophagitis is less vulnerable to the diagnostic-labeling noise that inflates symptom-coded GERD, so a concordant signal across both phenotypes strengthens causal interpretation, while a signal confined to symptom-defined GERD points toward a perceptual rather than a structural pathway. Third, because \code{has_esophagitis} is a strict subset nested within the same GERD-record pull, it is by construction rarer than broad GERD; this reduces statistical power and can widen confidence intervals, which the analysis accommodates through complete-case reporting, FDR control, and diagnostic checks for separation and unstable standard errors. Reporting both phenotypes with the identical modeling engine makes the comparison fair and transparent.
+First, the two phenotypes plausibly load on different mechanisms: symptom-defined GERD is more strongly shaped by visceral hypersensitivity and central pain processing (sensitive to sleep-related hyperalgesia), whereas erosive disease is more directly a function of cumulative acid-contact time and barrier failure (sensitive to supine exposure, delayed clearance, and adiposity). Contrasting the exposure associations across the two outcomes is therefore mechanistically informative. Second, erosive oesophagitis is less vulnerable to the diagnostic-labeling noise that inflates symptom-coded GERD, so a concordant signal across both phenotypes strengthens causal interpretation, while a signal confined to symptom-defined GERD points toward a perceptual rather than a structural pathway. Third, because \code{has_esophagitis} is a strict subset nested within the same GERD-record pull, it is by construction rarer than broad GERD; this reduces statistical power and can widen confidence intervals, which the analysis accommodates through complete-case reporting, multiplicity control, and diagnostic checks for separation and unstable standard errors. Reporting both phenotypes with the identical modeling engine makes the comparison fair and transparent.
 
 \subsection{Rationale and the All of Us Research Opportunity}
 
@@ -251,7 +251,7 @@ Covariates & Demographics, socioeconomic status, median BMI, Charlson Comorbidit
 \addlinespace
 Missing data & Binary EHR indicators coalesced NA $\rightarrow$ FALSE; survey/measurement missingness retained as an explicit Missing level \\
 \addlinespace
-Multiplicity & Benjamini--Hochberg false discovery rate (FDR) $q$-values \\
+Multiplicity & Bonferroni correction (paper-matching; FDR selectable) \\
 \addlinespace
 Configurations & Six: 2 outcomes $\times$ 3 exposure sets, all fit by one shared engine \\
 \addlinespace
@@ -397,7 +397,7 @@ estimator (logistic regression), the same covariate specification, the same refe
 convention, the same complete-case handling, the same full-model-plus-backward-AIC pairing (via
 \code{MASS::stepAIC} with the exposure forced to remain), the same area-under-the-curve computation
 via \code{pROC}, the same variance-inflation-factor computation via \code{car}, the same descriptive
-stratified tables with chi-square tests and FDR $q$-values, and the same diagnostic battery
+stratified tables with chi-square tests and adjusted $p$-values, and the same diagnostic battery
 (independence, multicollinearity, separation and large standard errors, Cook's distance, and
 Box--Tidwell linearity for BMI). The driver \code{analyze_all_outcomes()} loops both outcomes so that
 a single call in each analysis file produces both configurations in that exposure column under
@@ -613,7 +613,7 @@ of the two GERD seeds can add those seed IDs to the pull (documented in the uplo
 \toprule
 \textbf{Variable} & \textbf{Rule} & \textbf{Purpose} \\
 \midrule
-\code{has_gerd} & $\geq 2$ GERD records & Primary broad outcome. \\
+\code{has_gerd} & $\geq 2$ GERD records, first $\geq 180$ days after the first Fitbit record & Primary broad outcome (paper-matching temporal rule; \code{GERD_PRIMARY_DEF} switches to the ``ever'' rule). \\
 \code{has_esophagitis} & $\geq 2$ esophagitis-named records & Primary erosive outcome. \\
 \code{has_gerd_dates} & $\geq 2$ records on \emph{distinct} dates & Specificity sensitivity check. \\
 \code{has_post_fitbit_gerd} & first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes &
@@ -1012,7 +1012,7 @@ For each outcome a \code{gtsummary::tbl_summary} table is stratified by the outc
 ``No GERD''/``GERD'' or ``No oesophagitis''/``Oesophagitis''), reporting the exposure quartiles,
 continuous exposure metrics, demographics, behavioral and socio-economic factors, the Charlson index,
 all comorbidities, PUD, IBS, medications, and median BMI. Chi-square tests are attached for the
-collapsed categorical demographics, Benjamini--Hochberg FDR $q$-values are added, and emphasis is placed
+collapsed categorical demographics, Bonferroni-adjusted $p$-values are added, and emphasis is placed
 on $q$ rather than raw $p$. Race, ethnicity, sex, education, and income are collapsed to protect small
 cells and improve legibility.
 
@@ -1025,7 +1025,7 @@ be read side by side. This section documents that structure.
 \subsection{Per-configuration outputs}
 For each outcome the engine emits, in order: (1) a stratified descriptive table
 (\code{tbl_summary}) with counts/percentages for categorical variables, medians/IQRs for continuous
-variables, a Missing row where applicable, chi-square tests for the collapsed demographics, and FDR
+variables, a Missing row where applicable, chi-square tests for the collapsed demographics, and adjusted
 $q$-values; (2) a univariable table (\code{tbl_uvregression}) of unadjusted ORs with 95\% CIs for every
 exposure and covariate; (3) a stacked multivariable table (\code{tbl_stack}) with, per exposure, a full
 model and a backward model side by side (\code{tbl_merge}), each footnoted with its complete-case $N$;
@@ -1277,8 +1277,8 @@ $N$ is reported per model and can differ across exposures.
 
 \subsection{Multiple comparisons}
 With fifteen exposures (each with several quartile contrasts) against two outcomes across three exposure
-sets, multiplicity is substantial. Descriptive and treated-GERD tables apply Benjamini--Hochberg FDR
-$q$-values via \code{add_q(method = "fdr")}, and the primary multivariable emphasis is on effect sizes
+sets, multiplicity is substantial. The analysis applies the Bonferroni correction across the models
+(matching the antecedent IBS paper; \code{GERD_P_ADJUST} selects FDR instead), and the primary multivariable emphasis is on effect sizes
 (aOR) and confidence intervals under a fixed, pre-specified adjustment set rather than on dichotomous
 significance.
 
@@ -1612,7 +1612,7 @@ deliberately varied analyses. This section states the pre-specified robustness a
   \item \textbf{Across exposure domains.} Agreement among the sleep-only (C1/C2), activity-only (C3/C4),
   and mutually-adjusted combined (C5/C6) estimates indicates that neither domain is merely a proxy for
   the other; the mutually-adjusted models are the decisive test of independent contribution.
-  \item \textbf{Across case definitions.} Agreement between the primary $\geq 2$-record definition and
+  \item \textbf{Across case definitions.} Agreement between the primary (temporal $\geq 2$-record) definition and
   the stricter distinct-date, temporal, and treated-disease definitions indicates the association is not
   an artifact of a particular phenotype rule.
 \end{enumerate}
@@ -1768,7 +1768,7 @@ fit_combined_pair <- function(df, outcome_col, outcome_labels, sleep_expo, act_e
 \code{avg_daily_max_hr_minute_all_days} & Corrected mean of daily maximum heart rate. \\
 \code{min_asleep_quartile}, \ldots & Cohort quartile (Q1 reference) of a sleep metric --- a modeled exposure. \\
 \code{step_quartile}, \ldots, \code{max_hr_minute_all_days_quartile} & Cohort quartile of an activity metric --- a modeled exposure. \\
-\code{has_gerd} & Primary broad outcome: $\geq 2$ GERD records. \\
+\code{has_gerd} & Primary broad outcome: $\geq 2$ GERD records with the first $\geq 180$ days after the first Fitbit record. \\
 \code{has_esophagitis} & Primary erosive outcome: $\geq 2$ esophagitis-named records. \\
 \code{has_gerd_dates} & Sensitivity: $\geq 2$ GERD records on distinct dates. \\
 \code{has_post_fitbit_gerd} & Temporal sensitivity: first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes. \\
@@ -1881,7 +1881,7 @@ Exposure quartiles, n (\%) & -- & -- & -- \\
 \bottomrule
 \end{tabular}
 \caption{Template: descriptive table stratified by an outcome (produced for each of the six
-configurations), with Benjamini--Hochberg FDR $q$-values.}
+configurations), with Bonferroni-adjusted $p$-values.}
 \end{table}
 
 %======================================================================
@@ -1953,7 +1953,7 @@ Outcomes & GERD and oesophagitis phenotypes; Outcome Ascertainment. \\
 Covariates / confounders & Covariate inventory and rationale; concept-ID tables. \\
 Missing data & Data-engineering / QC section. \\
 Statistical methods & Logistic model, per-exposure full/backward AIC, AUC, VIF. \\
-Multiplicity & Benjamini--Hochberg FDR $q$-values. \\
+Multiplicity & Bonferroni correction (paper-matching; FDR selectable). \\
 Sensitivity analyses & Distinct-date, temporal, overlap, treated-GERD. \\
 Bias / validity threats & Threats to Validity and Limitations. \\
 Reproducibility & Execution order; shared engine; software environment. \\
@@ -1985,7 +1985,7 @@ reference documents each one's role, inputs, and outputs.
 collapsed factor covariates and relevels quartiles to Q1--Q4 (Q1 reference). Output: the same frame with
 model-ready factors. \\
 \code{descriptive_table(df, outcome_col, outcome_labels, exposures, extra_cont)} & Builds a
-\code{tbl_summary} stratified by the outcome with chi-square tests and FDR $q$-values. \\
+\code{tbl_summary} stratified by the outcome with chi-square tests and adjusted $p$-values. \\
 \code{univariate_table(df, outcome_col, outcome_labels, exposures)} & Unadjusted ORs for exposures and
 covariates via \code{tbl_uvregression}. \\
 \code{run_models_for_outcome(df, outcome_col, outcome_labels, exposures, covars, cci_label)} & Fits, per
@@ -2042,7 +2042,7 @@ activity, or both).
 \code{tidyverse} & Data manipulation (\code{dplyr}, \code{tidyr}, \code{purrr}, \code{stringr}, \code{forcats}, \code{ggplot2}). \\
 \code{lubridate} & Date handling for temporal covariate and BMI windows. \\
 \code{rlang} & Tidy-evaluation helpers (dynamic outcome/column injection in the engine). \\
-\code{gtsummary} & Descriptive (\code{tbl_summary}), univariable (\code{tbl_uvregression}), and adjusted (\code{tbl_regression}, \code{tbl_merge}, \code{tbl_stack}) tables with FDR $q$-values. \\
+\code{gtsummary} & Descriptive (\code{tbl_summary}), univariable (\code{tbl_uvregression}), and adjusted (\code{tbl_regression}, \code{tbl_merge}, \code{tbl_stack}) tables with adjusted $p$-values. \\
 \code{broom} & Tidies model output into data frames (quick exposure-row extraction). \\
 \code{MASS} & Backward AIC selection (\code{stepAIC}). \\
 \code{car} & Generalized variance inflation factors (\code{vif}). \\
