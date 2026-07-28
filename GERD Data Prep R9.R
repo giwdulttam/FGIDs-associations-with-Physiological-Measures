@@ -58,6 +58,164 @@ drop_big <- function(...) {
 .jn <- function(x, y) if (is.null(y) || nrow(y) == 0) x else dplyr::full_join(x, y, by = "person_id")
 
 # ==============================================================================
+# 0b) All of Us environment repair + outcome-file bootstrapping
+# ==============================================================================
+# The Workbench normally sets WORKSPACE_BUCKET / OWNER_EMAIL / GOOGLE_PROJECT.
+# When an R session starts before that happens they come back empty, and any
+# BigQuery export silently builds a broken path like "/bq_exports//..." and then
+# fails with [notFound]. This recovers them from the gcloud/gsutil CLI.
+gerd_fix_aou_env <- function(verbose = TRUE) {
+  say <- function(...) if (verbose) cat(...)
+  need <- c("WORKSPACE_BUCKET", "OWNER_EMAIL", "GOOGLE_PROJECT")
+  cur  <- Sys.getenv(need)
+  missing <- need[!nzchar(cur)]
+  if (!length(missing)) { say("  All of Us environment variables already set.\n"); return(TRUE) }
+
+  say("  Missing environment variable(s): ", paste(missing, collapse = ", "), "\n")
+  try_cmd <- function(cmd) {
+    out <- suppressWarnings(tryCatch(system(cmd, intern = TRUE, ignore.stderr = TRUE),
+                                     error = function(e) character(0)))
+    out <- out[nzchar(out)]
+    if (length(out)) trimws(out[1]) else ""
+  }
+  if ("GOOGLE_PROJECT" %in% missing) {
+    v <- try_cmd("gcloud config get-value project 2>/dev/null")
+    if (nzchar(v) && !grepl("unset", v, ignore.case = TRUE)) {
+      Sys.setenv(GOOGLE_PROJECT = v); say("   recovered GOOGLE_PROJECT = ", v, "\n")
+    }
+  }
+  if ("OWNER_EMAIL" %in% missing) {
+    v <- try_cmd("gcloud config get-value account 2>/dev/null")
+    if (nzchar(v) && grepl("@", v)) {
+      Sys.setenv(OWNER_EMAIL = v); say("   recovered OWNER_EMAIL = ", v, "\n")
+    }
+  }
+  if ("WORKSPACE_BUCKET" %in% missing) {
+    v <- try_cmd("gsutil ls 2>/dev/null | grep -m1 '^gs://fc-'")
+    if (!nzchar(v)) v <- try_cmd("gsutil ls 2>/dev/null | head -1")
+    if (nzchar(v) && grepl("^gs://", v)) {
+      v <- sub("/$", "", v)
+      Sys.setenv(WORKSPACE_BUCKET = v); say("   recovered WORKSPACE_BUCKET = ", v, "\n")
+    }
+  }
+  still <- need[!nzchar(Sys.getenv(need))]
+  if (length(still)) {
+    say("  Could NOT recover: ", paste(still, collapse = ", "), "\n")
+    return(FALSE)
+  }
+  say("  Environment repaired.\n")
+  TRUE
+}
+
+# Build the two outcome files directly from R9_condition_df, when that table
+# happens to contain the relevant records. This avoids BigQuery entirely.
+# NOTE: this is a LOCAL approximation -- it cannot perform the Cohort Builder
+# descendant expansion, so it matches on the seed concept ids plus concept-name
+# patterns. The BigQuery pull remains the rigorous definition.
+gerd_outcomes_from_condition_df <- function(data_dir = ".",
+                                            gerd_ids = 4144111, eso_ids = 30753,
+                                            gerd_pattern = "reflux",
+                                            eso_pattern  = "esophagitis|oesophagitis",
+                                            write = TRUE, verbose = TRUE) {
+  f <- file.path(data_dir, "R9_condition_df.rds")
+  if (!file.exists(f)) return(NULL)
+  if (verbose) cat("  Scanning R9_condition_df.rds for reflux / oesophagitis records...\n")
+  cond <- readRDS(f)
+  nm <- if ("standard_concept_name" %in% names(cond)) cond$standard_concept_name else ""
+  nm_lc <- tolower(nm)
+
+  # CAREFUL: the concept name for 4144111 is "Gastroesophageal reflux disease
+  # WITHOUT esophagitis" -- it contains the word "esophagitis". Matching on that
+  # word alone puts every GERD-without-oesophagitis record into the oesophagitis
+  # group and inverts the study. So:
+  #   (a) an explicit concept-id match always wins, and
+  #   (b) the name fallback treats "without (o)esophagitis" as NOT oesophagitis.
+  id_gerd <- cond$condition_concept_id %in% gerd_ids
+  id_eso  <- cond$condition_concept_id %in% eso_ids
+  says_without <- grepl("without\\s+o?esophagitis", nm_lc)
+
+  nm_eso  <- grepl(eso_pattern, nm_lc) & !says_without
+  nm_gerd <- grepl(gerd_pattern, nm_lc) & !nm_eso
+
+  is_eso  <- id_eso | (!id_gerd & nm_eso)
+  is_gerd <- (id_gerd | nm_gerd) & !is_eso
+
+  if (!any(is_eso) && !any(is_gerd)) {
+    if (verbose) cat("   no matching records found in R9_condition_df.\n")
+    return(NULL)
+  }
+
+  keep <- c("person_id","condition_concept_id","standard_concept_name",
+            "standard_concept_code","condition_start_datetime","condition_end_datetime",
+            "condition_type_concept_name","stop_reason",
+            "condition_status_source_value","condition_status_concept_id")
+  shape <- function(d) {
+    for (k in setdiff(keep, names(d))) d[[k]] <- NA
+    d[, keep, drop = FALSE]
+  }
+  g <- shape(cond[is_gerd, , drop = FALSE])
+  e <- shape(cond[is_eso,  , drop = FALSE])
+
+  if (verbose) {
+    cat("   GERD-without-oesophagitis records:", nrow(g),
+        " participants:", dplyr::n_distinct(g$person_id), "\n")
+    cat("   Oesophagitis records:            ", nrow(e),
+        " participants:", dplyr::n_distinct(e$person_id), "\n")
+    cat("   Concepts matched:\n")
+    print(utils::head(dplyr::count(dplyr::bind_rows(g, e), condition_concept_id,
+                                   standard_concept_name, sort = TRUE), 25))
+  }
+  if (write) {
+    saveRDS(g, file.path(data_dir, "R9_gerd_no_eso_outcome.rds"))
+    saveRDS(e, file.path(data_dir, "R9_esophagitis_outcome.rds"))
+    if (verbose) cat("   Wrote R9_gerd_no_eso_outcome.rds and R9_esophagitis_outcome.rds\n")
+  }
+  list(gerd_no_eso = g, esophagitis = e)
+}
+
+# Make sure both outcome files exist, using whichever route works:
+#   1. already present  ->  use them
+#   2. R9_condition_df contains the records  ->  build locally (no BigQuery)
+#   3. otherwise  ->  run the BigQuery pull (repairing the environment first)
+gerd_ensure_outcome_files <- function(data_dir = ".", code_dir = ".",
+                                      allow_bigquery = TRUE) {
+  f1 <- file.path(data_dir, "R9_gerd_no_eso_outcome.rds")
+  f2 <- file.path(data_dir, "R9_esophagitis_outcome.rds")
+  if (file.exists(f1) && file.exists(f2)) {
+    cat("  Outcome files already present -- skipping the pull.\n"); return("existing")
+  }
+
+  cat("\n-- Outcome files not found. Trying to build them. --\n")
+  loc <- tryCatch(gerd_outcomes_from_condition_df(data_dir), error = function(e) NULL)
+  if (!is.null(loc)) {
+    cat("  Built the outcome files locally from R9_condition_df (no BigQuery needed).\n")
+    cat("  NOTE: this is a local match, not the Cohort Builder descendant expansion.\n",
+        "       If you want the definitive concept set, run\n",
+        "       \"GERD Outcome Data Upload R9.R\" once and re-run this script.\n", sep = "")
+    return("local")
+  }
+
+  if (!allow_bigquery) stop("Outcome files missing and local build failed.", call. = FALSE)
+
+  cat("  Falling back to the BigQuery pull.\n")
+  ok <- gerd_fix_aou_env()
+  if (!ok)
+    stop("Cannot run the BigQuery pull: the All of Us environment variables are not set ",
+         "and could not be recovered.\nSet them by hand, e.g.\n",
+         '  Sys.setenv(WORKSPACE_BUCKET = "gs://fc-secure-XXXX")\n',
+         '  Sys.setenv(OWNER_EMAIL = "you@researchallofus.org")\n',
+         '  Sys.setenv(GOOGLE_PROJECT = "aou-rw-XXXX")\n', call. = FALSE)
+
+  up <- file.path(code_dir, "GERD Outcome Data Upload R9.R")
+  if (!file.exists(up)) stop("Cannot find: ", up, call. = FALSE)
+  old <- getwd(); on.exit(setwd(old), add = TRUE); setwd(data_dir)
+  source(up)
+  if (!file.exists(f1) || !file.exists(f2))
+    stop("The BigQuery pull finished but the outcome files were not created.", call. = FALSE)
+  "bigquery"
+}
+
+# ==============================================================================
 # 1) Education / income from CONCEPT IDs (robust) with text fallback
 # ==============================================================================
 # The free-text *_response values did not match the IBS script's case_when, which

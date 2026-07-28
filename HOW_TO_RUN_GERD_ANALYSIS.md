@@ -1,152 +1,70 @@
-# How to Run the GERD / Oesophagitis Analysis in the All of Us Workbench
+# How to Run the GERD Analysis
 
-Everything you need, in order. Follow this top to bottom.
-
----
-
-## 0. Your setup — read this first
-
-Your `.rds` datasets live here (from the RStudio **Files** breadcrumb
-`Home > workspace > rw-migration-aou-rw-b5f00092-updated > rw-migration-aou-rw-b5f00092 > rds_backup`):
-
-```
-~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup
-```
-
-**This is the single most important thing to get right.** The scripts read and write files by
-relative name, so they must run with that folder as the working directory.
-`RUN_GERD_ANALYSIS.R` handles this for you — it is the recommended way to run everything.
-
-Confirm the path first. Paste this into the R console:
-
-```r
-DATA <- path.expand("~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup")
-dir.exists(DATA)
-length(list.files(DATA, pattern = "\\.rds$"))
-```
-
-You want `TRUE` and a count in the hundreds. If it prints `FALSE`, find the real path with:
-
-```r
-dirname(list.files(path.expand("~"), pattern = "^R9_person_df\\.rds$",
-                   recursive = TRUE, full.names = TRUE))
-```
-
-Whatever that prints is your `GERD_DATA_DIR`.
+Three steps. Copy, paste, done.
 
 ---
 
-## 1. Get the code from GitHub
+## Step 1 — Get the code
 
-Repo: <https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures>
-
-In the RStudio **Terminal** tab:
+Open the **Terminal** tab in RStudio and paste this:
 
 ```bash
-cd ~/workspace
-git clone https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures.git gerd_code
-ls gerd_code/*.R
+cd ~/workspace && rm -rf gerd_code && git clone https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures.git gerd_code
 ```
-
-That puts the scripts in `~/workspace/gerd_code`, separate from your data — which is fine, the
-runner bridges the two.
-
-> **No git?** Open each file on GitHub, click **Raw**, copy all, and paste into a new file in
-> RStudio saved under the *exact same filename*. The names matter — the scripts find each other by
-> name. You need all eight files listed in section 6.
 
 ---
 
-## 2. Run the outcome pull — once only
+## Step 2 — Run it
 
-This is the only step that uses BigQuery. Run it **from the data folder** so the outputs land next
-to everything else.
+Go back to the **Console** tab and paste this one line:
 
 ```r
-setwd(path.expand("~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup"))
-source("~/workspace/gerd_code/GERD Outcome Data Upload R9.R")
+source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 ```
 
-It runs **two** pulls and saves two files into the data folder:
+That's it. Nothing to edit, no paths to set.
 
-| Output | Phenotype | Seed concept |
-|---|---|---|
-| `R9_gerd_no_eso_outcome.rds` | GERD **without** oesophagitis | `4144111` |
-| `R9_esophagitis_outcome.rds` | Oesophagitis | `30753` |
-
-**Read the console output before moving on.** It prints every concept captured by each pull and a
-final overlap report (how many participants have only one phenotype, and how many have both).
-
-> ⚠️ **Check the oesophagitis scope.** The descendants of `30753` may include **non-reflux**
-> oesophagitis — eosinophilic, infectious, pill-induced, radiation. As written your outcome is
-> "oesophagitis", not "reflux oesophagitis". If you want reflux only, narrow `ESOPHAGITIS_SEEDS`
-> at the top of that script before running it. The printed concept list tells you exactly what is
-> in scope.
+It takes **10–30 minutes**. You'll see progress as it goes.
 
 ---
 
-## 3. Run everything — the easy way
+## Step 3 — Get your results
 
-Open `~/workspace/gerd_code/RUN_GERD_ANALYSIS.R` in RStudio.
-
-**Check the top of the file.** Only these lines matter:
+When it finishes it prints where your files are. To list them:
 
 ```r
-GERD_DATA_DIR <- path.expand(
-  "~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup")
-
-GERD_CODE_DIR <- getwd()                              # folder holding the .R files
-GERD_RUN      <- c("sleep", "activity", "combined")   # which analyses to run
+list.files(file.path(GERD_DATA_DIR, "manuscript_output"))
 ```
 
-The data path is already set to yours. `GERD_CODE_DIR <- getwd()` works as long as RStudio's working
-directory is the code folder — if unsure, set it explicitly to `"~/workspace/gerd_code"`.
+To open one:
 
-Then click **Source** (or `Ctrl/Cmd + Shift + S`).
+```r
+read.csv(file.path(GERD_DATA_DIR, "manuscript_output", "sleep_gerd_no_eso_table1.csv"), check.names = FALSE)
+```
 
-The runner will:
-1. verify the data folder exists (and, if not, search your home directory and suggest the right path),
-2. verify all scripts and both outcome files are present,
-3. `setwd()` into the data folder,
-4. run each analysis in turn, timing them and catching failures individually,
-5. print a summary and tell you where the results are.
+To download: **Files** pane → `rds_backup` → `manuscript_output` → tick the files → **More** → **Export**.
 
-Expect roughly **10–30 minutes total** — the backward-AIC step is the slow part. A failure in one
-analysis will not stop the others.
+---
+---
 
-**To run just one analysis**, edit that line, e.g. `GERD_RUN <- c("sleep")`.
+# What it does automatically
+
+You do not need to do any of this yourself — it is listed so you know what happened.
+
+| It handles | How |
+|---|---|
+| Finding your datasets | Looks in your `rds_backup` folder; if not there, searches your home directory |
+| Finding the code | Looks in `~/workspace/gerd_code` |
+| The UTF-8 locale warning | Sets a UTF-8 locale so the accented factor labels match |
+| Missing All of Us environment variables | Recovers `WORKSPACE_BUCKET`, `OWNER_EMAIL` and `GOOGLE_PROJECT` from `gcloud`/`gsutil` — this is what caused your earlier `[notFound]` error |
+| Creating the outcome data | Builds it from `R9_condition_df` if the records are there (no BigQuery), otherwise runs the BigQuery pull |
+| Running the analyses | Sleep, activity, and combined — each with its own error handling, so one failure will not stop the others |
 
 ---
 
-## 4. Run everything — the manual way
+# Your results
 
-If you would rather run them one at a time:
-
-```r
-setwd(path.expand("~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup"))
-GERD_CODE_DIR <- "~/workspace/gerd_code"
-
-source(file.path(GERD_CODE_DIR, "Sleep and GERD Analysis File R9.R"))          # C1 + C2
-source(file.path(GERD_CODE_DIR, "Activity and GERD Analysis File R9.R"))       # C3 + C4
-source(file.path(GERD_CODE_DIR, "Activity Sleep and GERD Analysis File R9.R")) # C5 + C6
-```
-
-Setting `GERD_CODE_DIR` first is what lets the scripts find each other while the working directory
-stays on the data.
-
----
-
-## 5. Collect your results
-
-Everything lands in a `manuscript_output` folder **inside the data folder**:
-
-```r
-OUT <- file.path(GERD_DATA_DIR, "manuscript_output")
-list.files(OUT)
-read.csv(file.path(OUT, "sleep_gerd_no_eso_table1.csv"), check.names = FALSE)
-```
-
-You get six sets of files — 2 outcomes × 3 exposure sets:
+You get **six sets** of files — 2 outcomes × 3 exposure sets:
 
 | Prefix | Analysis |
 |---|---|
@@ -157,92 +75,83 @@ You get six sets of files — 2 outcomes × 3 exposure sets:
 | `combined_gerd_no_eso_*` | Sleep + activity → GERD without oesophagitis |
 | `combined_esophagitis_*` | Sleep + activity → Oesophagitis |
 
-And within each set:
+Each set contains:
 
-| File | Manuscript element |
+| File | What it is |
 |---|---|
-| `*_table1.csv` | **Table 1** — demographics by outcome group |
-| `*_table2.csv` | **Table 2** — exposure metrics, quartile cutoffs in the row labels |
-| `*_supp_table1_univariate.csv` | **Supplement Table 1** — unadjusted ORs |
-| `*_supp_table2_multivariable.csv` | **Supplement Table 2** — adjusted ORs |
-| `*_figure1_forest.png` | **Figure 1** — forest plots (Q1 reference) |
-| `*_figure2_gvif.png` | **Figure 2** — GVIF chart |
-| `*_diagnostics.csv` | GVIF range, max Cook's distance, Box–Tidwell p, AUC range |
-| `*_quartile_cutoffs.csv` | Exact unrounded cutoffs for the Table 2 footnote |
-| `combined_*_mutually_adjusted_pairs.csv` | Sleep × activity mutually-adjusted models |
-
-To download: RStudio **Files** pane → navigate into `rds_backup/manuscript_output` → tick the files →
-**More** → **Export**.
+| `*_table1.csv` | **Table 1** — demographics |
+| `*_table2.csv` | **Table 2** — sleep/activity metrics with quartile cutoffs |
+| `*_supp_table1_univariate.csv` | **Supplement Table 1** — unadjusted odds ratios |
+| `*_supp_table2_multivariable.csv` | **Supplement Table 2** — adjusted odds ratios |
+| `*_figure1_forest.png` | **Figure 1** — forest plots |
+| `*_figure2_gvif.png` | **Figure 2** — multicollinearity chart |
+| `*_diagnostics.csv` | Numbers for the Results paragraph on model assumptions |
+| `*_quartile_cutoffs.csv` | Exact quartile boundaries for the Table 2 footnote |
 
 ---
 
-## 6. Files you need
+# Three lines worth reading in the output
+
+**1. Your cohort size**
 
 ```
-RUN_GERD_ANALYSIS.R                          <- run this (section 3)
-GERD Outcome Data Upload R9.R                <- run once (section 2)
-GERD Analysis Helpers R9.R                   <- shared engine     (sourced, never run alone)
-GERD Data Prep R9.R                          <- shared data layer (sourced, never run alone)
-Sleep and GERD Analysis File R9.R            <- analysis C1 + C2
-Activity and GERD Analysis File R9.R         <- analysis C3 + C4
-Activity Sleep and GERD Analysis File R9.R   <- analysis C5 + C6
-GERD Pharmacologics Data Upload.R            <- optional (treated-GERD sensitivity)
+Eligible sleep cohort N = 19995
 ```
 
+This should match your published IBS paper. If it is different, a different `valid_population_sleep.rds` was picked up.
+
+**2. Your case counts**
+
+```
+build_gerd_outcomes():
+  GERD without oesophagitis  ever = ... | post-Fitbit = ...
+  Oesophagitis               ever = ... | post-Fitbit = ...
+  Carry BOTH (ever): ...
+```
+
+If a post-Fitbit count is very small, the analysis may be underpowered — tell me and we can switch the primary definition to "ever".
+
+**3. Any dropped covariates**
+
+```
+[sparsity guard] ... dropped N covariate(s)
+```
+
+This means a covariate had no cases in one group, so it was removed **from that one model** to avoid a meaningless odds ratio. Expect it on the oesophagitis models. **If you see it, mention it in the manuscript methods.**
+
 ---
 
-## 7. What to watch for in the console
+# If something goes wrong
 
-| Line | What it means |
+| Message | What to do |
 |---|---|
-| `[load] ... : <file>` | Which covariate file was used. `[miss]` means it fell back to deriving from the raw tables. |
-| `build_gerd_outcomes():` | Case counts for **both** phenotypes under **both** definitions, plus how many people carry both. |
-| `Eligible sleep cohort N = 19995` | ✅ Matches your published IBS cohort. A different number means a different `valid_population_sleep.rds` was picked up. |
-| `[sparsity guard] ... dropped N covariate(s)` | A covariate had an empty outcome × level cell and was removed **from that model only**, to avoid an infinite odds ratio. Expect this on the rarer oesophagitis models (especially `has_pud`, recorded for ~137 people). **If it fires on a primary model, report it in the manuscript methods.** |
+| `Could not find your .rds datasets` | Open `RUN_GERD_ANALYSIS.R`, put your data folder path in `GERD_DATA_DIR` at the top, save, re-run Step 2. |
+| `Could not find the GERD .R scripts` | Step 1 did not finish. Re-run it and check for errors in the Terminal. |
+| `the All of Us environment variables are not set` | Only happens if `gcloud` is unavailable. Run `Sys.setenv(WORKSPACE_BUCKET="gs://...", OWNER_EMAIL="you@...", GOOGLE_PROJECT="aou-rw-...")` then re-run Step 2. |
+| One analysis says `FAILED` | The others still ran. Send me the error text above the summary. |
+| Session runs out of memory | Edit `GERD_RUN` near the top of the runner to one at a time, e.g. `GERD_RUN <- c("sleep")`, restarting R between runs. |
 
 ---
 
-## 8. Settings you may want to change
+# To re-run later
 
-At the top of **`GERD Analysis Helpers R9.R`**:
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `GERD_PRIMARY_DEF` | `"post_fitbit"` | Primary phenotype = ≥2 codes with the **first ≥180 days after the first Fitbit record**, matching your published IBS paper. `"ever"` uses ≥2 codes at any time. The other is always kept as `*_sens`. |
-| `GERD_POST_FITBIT_LAG_DAYS` | `180` | The lag above. |
-| `GERD_P_ADJUST` | `"bonferroni"` | Multiplicity correction (your IBS paper used Bonferroni). `"fdr"` or `"none"` also work. |
-| `GERD_MIN_CELL` | `1` | Sparsity guard threshold. |
-| `GERD_OUTPUT_DIR` | `"manuscript_output"` | Output folder name (relative to the data folder). |
-
-In `Activity Sleep and GERD Analysis File R9.R`, `GERD_COMBINED_ANCHOR` (default `"sleep"`) chooses
-which stream anchors covariate timing for the combined cohort.
-
-Seed concepts live at the top of `GERD Outcome Data Upload R9.R`:
+Everything after the first run is cached, so it is just Step 2 again:
 
 ```r
-GERD_NO_ESO_SEEDS <- c(4144111)
-ESOPHAGITIS_SEEDS <- c(30753)
+source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
+```
+
+To pull the newest code first:
+
+```bash
+cd ~/workspace/gerd_code && git pull
 ```
 
 ---
 
-## 9. Troubleshooting
+# Two things to confirm before publishing
 
-| Symptom | Fix |
-|---|---|
-| `GERD_DATA_DIR does not exist` | The runner prints candidate folders it found — copy one in. |
-| `Missing outcome file(s)` | Run section 2 first, from the data folder. |
-| `These script(s) are not in GERD_CODE_DIR` | Point `GERD_CODE_DIR` at your clone, e.g. `"~/workspace/gerd_code"`. |
-| `could not find function "build_gerd_outcomes"` | You ran an analysis file directly without `GERD_CODE_DIR` set. Use the runner, or set it first (section 4). |
-| `cannot open file 'R9_person_df.rds'` | Working directory is not the data folder. The runner does this for you. |
-| `unused arguments (person_id, ...)` in `select()` | A package masked `dplyr::select`. Restart R (Session → Restart R) and re-run. |
-| Out of memory / session restarts | Make sure the pre-built covariate `.rds` files are present so the multi-GB raw tables are never loaded. Restart R between analyses and run one at a time via `GERD_RUN`. |
-| Everything runs but education/income look empty | Should not happen — these are mapped from concept IDs, not free text. If it does, tell me: it means the survey extract differs from the verified schema. |
+1. **Verify the concept IDs** `4144111` (GERD without oesophagitis) and `30753` (oesophagitis) in the Cohort Builder.
+2. **Check the oesophagitis scope.** The descendants of `30753` may include non-reflux causes — eosinophilic, infectious, pill-induced, radiation. As written the outcome is "oesophagitis", not "reflux oesophagitis". If you want reflux only, narrow `ESOPHAGITIS_SEEDS` at the top of `GERD Outcome Data Upload R9.R`.
 
----
-
-## 10. Two things to confirm before you publish
-
-1. **Verify the concept IDs** `4144111` and `30753` in the Cohort Builder.
-2. **Decide the oesophagitis scope** — narrow `30753` if the paper is about *reflux* oesophagitis
-   specifically (see section 2).
+If the run used the local route (it will say so), the outcome data came from `R9_condition_df` by concept-ID and name matching rather than the Cohort Builder's full descendant expansion. That is fine for getting results now, but run `GERD Outcome Data Upload R9.R` once for the definitive concept set before you publish.

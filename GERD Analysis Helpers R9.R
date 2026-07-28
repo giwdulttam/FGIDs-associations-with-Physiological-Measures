@@ -613,6 +613,14 @@ manuscript_supp_univariate <- function(df, outcome_col, outcome_labels, exposure
     out
   })
 
+  if (nrow(rows) == 0 || !"p.value" %in% names(rows)) {
+    warning("No univariable models could be fitted for ", outcome_col,
+            " (no variable had usable variation). Returning an empty table.",
+            call. = FALSE)
+    return(tibble::tibble(variable = character(0), level = character(0), N = integer(0),
+                          OR = numeric(0), conf.low = numeric(0), conf.high = numeric(0),
+                          p.value = numeric(0), p_adjusted = numeric(0)))
+  }
   rows <- rows %>%
     dplyr::mutate(
       p_adjusted = .p_adjust(p.value, sum(!is.na(p.value))),
@@ -643,7 +651,8 @@ manuscript_supp_univariate <- function(df, outcome_col, outcome_labels, exposure
 # level with zero events produces an infinite, meaningless odds ratio and can make
 # the whole model unstable. This drops such covariates FROM THAT MODEL ONLY and
 # reports exactly what was dropped, rather than silently returning garbage.
-GERD_MIN_CELL <- 1   # drop a covariate if any outcome x level cell is < this
+GERD_MIN_CELL <- 1    # drop a covariate if any outcome x level cell is < this
+GERD_MIN_CASES <- 10  # skip an outcome entirely if it has fewer cases than this
 
 drop_unstable_covariates <- function(d, outcome_col, covars, min_cell = GERD_MIN_CELL,
                                      context = "") {
@@ -785,6 +794,10 @@ manuscript_supp_multivariable <- function(results, modeling_df = NULL, exposures
                      conf.high = tt$conf.high, p.value = tt$p.value))
   })
 
+  if (nrow(rows) == 0 || !"p.value" %in% names(rows)) {
+    warning("No multivariable models produced estimates for this outcome.", call. = FALSE)
+    return(rows)
+  }
   rows <- rows %>%
     dplyr::mutate(
       p_adjusted = .p_adjust(p.value, sum(!is.na(p.value))),
@@ -931,6 +944,20 @@ analyze_all_outcomes <- function(modeling_df, exposures,
   for (onm in names(GERD_OUTCOMES)) {
     oc <- GERD_OUTCOMES[[onm]]
     if (!oc$col %in% names(modeling_df)) next
+
+    # An outcome with (almost) no cases cannot be modelled. Say so plainly and
+    # move on, rather than failing later inside the table builders.
+    .y  <- modeling_df[[oc$col]]
+    .nc <- sum(.y %in% TRUE, na.rm = TRUE)
+    if (.nc < GERD_MIN_CASES) {
+      cat("\n\n### SKIPPING OUTCOME:", oc$col, "-- only", .nc,
+          "case(s) in this cohort (minimum", GERD_MIN_CASES, ").\n")
+      cat("### Nothing is wrong with the code: this phenotype is too rare here.\n")
+      cat("### If you expected more, check the case counts printed by",
+          "build_gerd_outcomes(),\n### and consider GERD_PRIMARY_DEF <- \"ever\".\n")
+      out[[onm]] <- list(skipped = TRUE, n_cases = .nc)
+      next
+    }
     fs <- paste0(stub, "_", onm)
     cat("\n\n##################################################################\n")
     cat("### OUTCOME:", oc$col, "(", oc$labels[2], ")  [", fs, "]\n")

@@ -1,117 +1,167 @@
 #-------------------------------------------------------------------------------
-# RUN_GERD_ANALYSIS.R -- one-click runner for the whole GERD / oesophagitis study
+#  RUN_GERD_ANALYSIS.R
 #
-# HOW TO USE
-#   1. Edit GERD_DATA_DIR below so it points at the folder holding your .rds files.
-#   2. Open this file in RStudio and click "Source" (or paste the whole file).
+#  ONE FILE. Source it. It does everything.
 #
-# It will: check the folder, load the code, run the three analyses, and tell you
-# where the manuscript tables and figures landed.
+#  In RStudio:  open this file  ->  click "Source"
+#  Or console:  source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 #
-# You must have run "GERD Outcome Data Upload R9.R" once beforehand (it is the
-# only step that needs BigQuery). See HOW_TO_RUN_GERD_ANALYSIS.md.
+#  It finds your data, fixes the locale, repairs the All of Us environment
+#  variables if they are missing, creates the outcome files (locally if possible,
+#  otherwise via BigQuery), runs all three analyses, and tells you where the
+#  results are. You should not need to edit anything.
 #-------------------------------------------------------------------------------
 
 # ==============================================================================
-# 1) WHERE THINGS ARE  -- the only lines you should need to edit
+# SETTINGS -- leave blank to auto-detect. Only fill in if auto-detection fails.
 # ==============================================================================
-
-# Folder containing the .rds datasets (from the RStudio Files pane breadcrumb:
-#   Home > workspace > rw-migration-aou-rw-b5f00092-updated >
-#          rw-migration-aou-rw-b5f00092 > rds_backup )
-GERD_DATA_DIR <- path.expand(
-  "~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup")
-
-# Folder containing the GERD .R scripts. If you cloned the repo, point this at
-# the clone. Leaving it as getwd() works when you opened this file from that folder.
-GERD_CODE_DIR <- getwd()
-
-# Which analyses to run: any of "sleep", "activity", "combined"
-GERD_RUN <- c("sleep", "activity", "combined")
+GERD_DATA_DIR <- ""    # folder holding the .rds datasets
+GERD_CODE_DIR <- ""    # folder holding the GERD .R scripts
+GERD_RUN      <- c("sleep", "activity", "combined")   # which analyses to run
 
 # ==============================================================================
-# 2) CHECKS -- fail early and clearly rather than halfway through a 20-minute run
+# Everything below is automatic.
 # ==============================================================================
-cat("\n=========== GERD ANALYSIS RUNNER ===========\n")
-cat("Code folder:", GERD_CODE_DIR, "\n")
-cat("Data folder:", GERD_DATA_DIR, "\n\n")
+cat("\n=====================================================\n")
+cat("            GERD / OESOPHAGITIS ANALYSIS\n")
+cat("=====================================================\n\n")
 
-if (!dir.exists(GERD_DATA_DIR)) {
-  cat("Could not find that data folder. Searching for a folder that contains\n",
-      "R9_person_df.rds under your home directory...\n\n")
-  hits <- list.files(path.expand("~"), pattern = "^R9_person_df\\.rds$",
-                     recursive = TRUE, full.names = TRUE)
-  if (length(hits)) {
-    cat("Found candidate data folder(s):\n")
-    cat(paste0("  ", unique(dirname(hits)), collapse = "\n"), "\n\n")
-    cat("Set GERD_DATA_DIR to one of the paths above and run this file again.\n")
-  } else {
-    cat("No R9_person_df.rds found under your home directory.\n")
+## ---- 1. Locale ---------------------------------------------------------------
+# Some factor levels use en-dashes ("30-44" style with a typographic dash). Under
+# a non-UTF-8 locale they fail to match and covariates silently become NA.
+if (!grepl("UTF-8", Sys.getlocale("LC_CTYPE"), ignore.case = TRUE)) {
+  for (lc in c("C.UTF-8", "en_US.UTF-8", "C.utf8")) {
+    ok <- suppressWarnings(try(Sys.setlocale("LC_ALL", lc), silent = TRUE))
+    if (!inherits(ok, "try-error") && nzchar(ok)) break
   }
-  stop("GERD_DATA_DIR does not exist -- see the suggestions above.", call. = FALSE)
+}
+cat("[1/6] Locale: ", Sys.getlocale("LC_CTYPE"), "\n", sep = "")
+
+## ---- 2. Find the code --------------------------------------------------------
+.needed <- c("GERD Analysis Helpers R9.R", "GERD Data Prep R9.R",
+             "Sleep and GERD Analysis File R9.R",
+             "Activity and GERD Analysis File R9.R",
+             "Activity Sleep and GERD Analysis File R9.R")
+.has_code <- function(d) length(d) == 1 && nzchar(d) && dir.exists(d) &&
+  all(file.exists(file.path(d, .needed)))
+
+# Bounded search: ONLY under ~/workspace, where All of Us keeps everything.
+# A full home-directory scan can hang for many minutes, so it is never attempted.
+.find_under <- function(pattern) {
+  root <- path.expand("~/workspace")
+  if (!dir.exists(root)) return(character(0))
+  suppressWarnings(list.files(root, pattern = pattern, recursive = TRUE,
+                              full.names = TRUE))
 }
 
-.code_files <- c("GERD Analysis Helpers R9.R", "GERD Data Prep R9.R",
-                 "Sleep and GERD Analysis File R9.R",
-                 "Activity and GERD Analysis File R9.R",
-                 "Activity Sleep and GERD Analysis File R9.R")
-.missing_code <- .code_files[!file.exists(file.path(GERD_CODE_DIR, .code_files))]
-if (length(.missing_code))
-  stop("These script(s) are not in GERD_CODE_DIR:\n  ",
-       paste(.missing_code, collapse = "\n  "), call. = FALSE)
+# Best signal of all: the folder this very file was sourced from.
+.script_dir <- function() {
+  for (i in seq_len(sys.nframe())) {
+    of <- tryCatch(sys.frame(i)$ofile, error = function(e) NULL)
+    if (!is.null(of) && is.character(of) && nzchar(of))
+      return(tryCatch(dirname(normalizePath(of)), error = function(e) ""))
+  }
+  ""
+}
 
-# The outcome pull must already exist (created by GERD Outcome Data Upload R9.R)
-.outcome_files <- c("R9_gerd_no_eso_outcome.rds", "R9_esophagitis_outcome.rds")
-.missing_out <- .outcome_files[!file.exists(file.path(GERD_DATA_DIR, .outcome_files))]
-if (length(.missing_out))
-  stop("Missing outcome file(s) in the data folder:\n  ",
-       paste(.missing_out, collapse = "\n  "),
-       "\n\nRun \"GERD Outcome Data Upload R9.R\" first (from the data folder).",
-       call. = FALSE)
+if (!.has_code(GERD_CODE_DIR)) {
+  for (cand in c(GERD_CODE_DIR, .script_dir(), getwd(),
+                 path.expand("~/workspace/gerd_code"),
+                 path.expand("~/gerd_code"))) {
+    if (.has_code(cand)) { GERD_CODE_DIR <- cand; break }
+  }
+}
+if (!.has_code(GERD_CODE_DIR)) {
+  hits <- .find_under("^GERD Analysis Helpers R9\\.R$")
+  if (length(hits)) GERD_CODE_DIR <- dirname(hits[1])
+}
+if (!.has_code(GERD_CODE_DIR))
+  stop("Could not find the GERD .R scripts. Set GERD_CODE_DIR at the top of this file ",
+       "to the folder you cloned them into.", call. = FALSE)
+cat("[2/6] Code folder: ", GERD_CODE_DIR, "\n", sep = "")
 
-cat("All scripts and both outcome files found.\n")
+## ---- 3. Find the data --------------------------------------------------------
+# A data folder is one that holds ANY of these. Do not require a single file:
+# depending on which pre-built objects exist, some may legitimately be absent.
+.data_probe <- c("R9_person_df.rds", "valid_population_sleep.rds",
+                 "sleep_summary_filtered.rds", "R9_condition_df.rds",
+                 "R9_steps_summary_filtered.rds", "R9_demographics.rds",
+                 "demographics.rds")
+.has_data <- function(d) length(d) == 1 && nzchar(d) && dir.exists(d) &&
+  any(file.exists(file.path(d, .data_probe)))
 
-# ==============================================================================
-# 3) RUN -- work from the data folder so the scripts' relative paths resolve
-# ==============================================================================
-.old_wd <- getwd()
-on.exit(setwd(.old_wd), add = TRUE)
+if (!.has_data(GERD_DATA_DIR)) {
+  for (cand in c(GERD_DATA_DIR, getwd(), path.expand(
+      "~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup"))) {
+    if (.has_data(cand)) { GERD_DATA_DIR <- cand; break }
+  }
+}
+if (!.has_data(GERD_DATA_DIR)) {
+  cat("      searching under ~/workspace for your datasets...\n")
+  for (pat in c("^valid_population_sleep\\.rds$", "^R9_person_df\\.rds$",
+                "^R9_condition_df\\.rds$")) {
+    hits <- .find_under(pat)
+    if (length(hits)) { GERD_DATA_DIR <- dirname(hits[1]); break }
+  }
+}
+if (!.has_data(GERD_DATA_DIR))
+  stop("Could not find your .rds datasets under ~/workspace.\n",
+       "Open RUN_GERD_ANALYSIS.R and set GERD_DATA_DIR at the top to the folder ",
+       "containing them, then run it again.", call. = FALSE)
+cat("[3/6] Data folder: ", GERD_DATA_DIR, "\n", sep = "")
+cat("      ", length(list.files(GERD_DATA_DIR, pattern = "\\.rds$")),
+    " .rds files found\n", sep = "")
+
+## ---- 4. Load the shared code -------------------------------------------------
+suppressWarnings(suppressMessages({
+  source(file.path(GERD_CODE_DIR, "GERD Analysis Helpers R9.R"))
+  source(file.path(GERD_CODE_DIR, "GERD Data Prep R9.R"))
+}))
+cat("[4/6] Engine loaded (primary outcome rule: ", GERD_PRIMARY_DEF,
+    ", p-adjust: ", GERD_P_ADJUST, ")\n", sep = "")
+
+## ---- 5. Make sure the outcome files exist ------------------------------------
+cat("[5/6] Outcome files\n")
+.route <- gerd_ensure_outcome_files(GERD_DATA_DIR, GERD_CODE_DIR)
+cat("      route: ", .route, "\n", sep = "")
+
+## ---- 6. Run the analyses -----------------------------------------------------
+cat("[6/6] Running analyses: ", paste(GERD_RUN, collapse = ", "), "\n", sep = "")
+.old_wd <- getwd(); on.exit(setwd(.old_wd), add = TRUE)
 setwd(GERD_DATA_DIR)
-cat("Working directory set to the data folder.\n")
 
 .scripts <- c(sleep    = "Sleep and GERD Analysis File R9.R",
               activity = "Activity and GERD Analysis File R9.R",
               combined = "Activity Sleep and GERD Analysis File R9.R")
-
 .results <- list()
 for (nm in intersect(GERD_RUN, names(.scripts))) {
   cat("\n\n############################################################\n")
-  cat("### RUNNING:", .scripts[[nm]], "\n")
+  cat("###  ", toupper(nm), "  --  ", .scripts[[nm]], "\n", sep = "")
   cat("############################################################\n")
   .t0 <- Sys.time()
-  ok <- tryCatch({ source(file.path(GERD_CODE_DIR, .scripts[[nm]]), echo = FALSE); TRUE },
-                 error = function(e) { message("\n*** FAILED (", nm, "): ",
-                                               conditionMessage(e), "\n"); FALSE })
-  .results[[nm]] <- ok
-  cat("\n---", nm, if (ok) "COMPLETED" else "FAILED", "in",
-      round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "minutes ---\n")
+  .results[[nm]] <- tryCatch({
+    source(file.path(GERD_CODE_DIR, .scripts[[nm]]), echo = FALSE); TRUE
+  }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e), "\n"); FALSE })
+  cat("\n---", nm, if (isTRUE(.results[[nm]])) "COMPLETED" else "FAILED", "in",
+      round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
 }
 
-# ==============================================================================
-# 4) SUMMARY
-# ==============================================================================
-cat("\n\n=========== SUMMARY ===========\n")
+## ---- Summary -----------------------------------------------------------------
+cat("\n\n=====================================================\n")
+cat("                     SUMMARY\n")
+cat("=====================================================\n")
 for (nm in names(.results))
-  cat(sprintf("  %-9s %s\n", nm, if (.results[[nm]]) "OK" else "FAILED"))
+  cat(sprintf("  %-9s %s\n", nm, if (isTRUE(.results[[nm]])) "OK" else "FAILED"))
 
 .out <- file.path(GERD_DATA_DIR, "manuscript_output")
 if (dir.exists(.out)) {
-  .f <- list.files(.out)
-  cat("\n", length(.f), " files written to:\n  ", .out, "\n", sep = "")
-  cat("\nTables and figures produced (one set per outcome):\n")
-  cat(paste0("  ", sort(.f)[seq_len(min(12, length(.f)))], collapse = "\n"), "\n")
-  if (length(.f) > 12) cat("  ... and", length(.f) - 12, "more\n")
+  .f <- sort(list.files(.out))
+  cat("\n", length(.f), " result files are in:\n  ", .out, "\n\n", sep = "")
+  cat("Open them with, for example:\n")
+  cat('  read.csv("', file.path(.out, "sleep_gerd_no_eso_table1.csv"),
+      '", check.names = FALSE)\n', sep = "")
+  cat("\nOr: Files pane -> rds_backup -> manuscript_output -> tick -> More -> Export\n")
 } else {
-  cat("\nNo manuscript_output folder was created -- check the messages above.\n")
+  cat("\nNo results folder was created -- see the messages above.\n")
 }
 cat("\nDone.\n")
