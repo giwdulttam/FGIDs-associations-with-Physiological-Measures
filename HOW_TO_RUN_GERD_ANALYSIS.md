@@ -10,8 +10,12 @@ Six analyses = **2 outcomes × 3 exposure sets**, all produced by one shared eng
 
 | | Sleep exposures | Activity exposures | Combined (sleep + activity) |
 |---|---|---|---|
-| **GERD** (`has_gerd`) | C1 | C3 | C5 |
-| **Oesophagitis** (`has_esophagitis`) | C2 | C4 | C6 |
+| **GERD without oesophagitis** (`has_gerd_no_eso`, seed 4144111) | C1 | C3 | C5 |
+| **Oesophagitis** (`has_esophagitis`, seed 30753) | C2 | C4 | C6 |
+
+The two outcomes come from **two separate condition pulls** and are **parallel, not nested** — neither
+is a subset of the other, and a participant may carry codes from both (the upload script reports that
+overlap).
 
 For **each** outcome in **each** exposure set the code writes, into `./manuscript_output/`:
 
@@ -26,7 +30,7 @@ For **each** outcome in **each** exposure set the code writes, into `./manuscrip
 | `*_diagnostics.csv` | GVIF range, max Cook's distance, Box–Tidwell p-values, AUC range |
 | `*_quartile_cutoffs.csv` | Exact (unrounded) quartile boundaries for the Table 2 footnote |
 
-Prefixes are `sleep_`, `activity_`, `combined_`, each followed by `gerd_` or `esophagitis_`.
+Prefixes are `sleep_`, `activity_`, `combined_`, each followed by `gerd_no_eso_` or `esophagitis_`.
 
 ---
 
@@ -77,13 +81,19 @@ copy the `.rds` files to where the scripts are.
 Open **`GERD Outcome Data Upload R9.R`** and find:
 
 ```r
-concept_id IN (318800, 4223293)
+GERD_NO_ESO_SEEDS <- c(4144111)   # Gastroesophageal reflux disease without oesophagitis
+ESOPHAGITIS_SEEDS <- c(30753)     # Oesophagitis
 ```
 
-In the **Cohort Builder**, search `gastroesophageal reflux` and `reflux esophagitis`, and
-confirm those two standard concepts (and their descendants) capture the definition you want.
-The SQL already expands to *all* standard descendants, so you usually do not need to add more.
-Add extra seed IDs only if the Cohort Builder shows relevant concepts outside that subtree.
+In the **Cohort Builder**, confirm both seeds and inspect their descendant sets. The SQL expands each
+seed to *all* standard descendants, so you usually do not need to add more IDs.
+
+> **Worth checking before you commit to this definition.** The descendants of `30753` (Oesophagitis)
+> may include **non-reflux** causes — eosinophilic, infectious, pill-induced and radiation
+> oesophagitis. If the paper is meant to be about *reflux* oesophagitis specifically, narrow the seed
+> to the reflux-oesophagitis concept instead. As written, the outcome is "oesophagitis", not "reflux
+> oesophagitis". The upload script prints every concept captured so you can see exactly what is in
+> scope before running any analysis.
 
 ---
 
@@ -93,9 +103,10 @@ Add extra seed IDs only if the Cohort Builder shows relevant concepts outside th
 source("GERD Outcome Data Upload R9.R")
 ```
 
-This runs BigQuery, writes CSVs to your workspace bucket, reads them back, and saves
-**`R9_gerd_outcome.rds`**. It also prints a preview of the captured concepts and how many
-rows are flagged as oesophagitis — check that this looks clinically sensible before going on.
+This runs **two** BigQuery pulls and saves **`R9_gerd_no_eso_outcome.rds`** and
+**`R9_esophagitis_outcome.rds`**. For each it prints every captured concept with its row count, and it
+finishes with an overlap report (how many participants have only GERD-without-oesophagitis codes, only
+oesophagitis codes, or both). Check that all of this looks clinically sensible before going on.
 
 > This is the only step that costs BigQuery time. Everything after it is local.
 
@@ -140,7 +151,7 @@ Read a table back in R, or download the folder from the Workbench file browser a
 CSVs in Excel/Word:
 
 ```r
-read.csv("manuscript_output/sleep_gerd_table1.csv", check.names = FALSE)
+read.csv("manuscript_output/sleep_gerd_no_eso_table1.csv", check.names = FALSE)
 ```
 
 The `_diagnostics.csv` files give you the exact numbers for the Results paragraph on model
@@ -154,7 +165,7 @@ All at the top of **`GERD Analysis Helpers R9.R`**:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `GERD_PRIMARY_DEF` | `"post_fitbit"` | Primary phenotype = ≥2 codes with the **first ≥180 days after the first Fitbit record**, matching your published IBS paper. Set to `"ever"` for ≥2 codes at any time. The other definition is always kept as `has_gerd_sens`. |
+| `GERD_PRIMARY_DEF` | `"post_fitbit"` | Primary phenotype = ≥2 codes with the **first ≥180 days after the first Fitbit record**, matching your published IBS paper. Set to `"ever"` for ≥2 codes at any time. The other definition is always kept as `has_gerd_no_eso_sens` / `has_esophagitis_sens`. |
 | `GERD_POST_FITBIT_LAG_DAYS` | `180` | The lag in the rule above. |
 | `GERD_P_ADJUST` | `"bonferroni"` | Multiplicity correction (your IBS paper used Bonferroni). `"fdr"` or `"none"` also work. |
 | `GERD_MIN_CELL` | `1` | Sparsity guard: drop a covariate from a model if any outcome × level cell is empty. |
@@ -178,8 +189,9 @@ derives that covariate from the raw tables instead and tells you it is doing so.
 
 **Watch the console for these lines:**
 - `[load] ...` / `[miss] ...` — which covariate source was used.
-- `build_gerd_outcomes(): GERD ever = ... | GERD post-Fitbit = ...` — case counts under both
-  definitions. If post-Fitbit is very small, consider whether `"ever"` is more appropriate.
+- `build_gerd_outcomes():` — case counts for **both phenotypes** under **both** definitions, plus how
+  many participants carry codes of both kinds. If a post-Fitbit count is very small, consider whether
+  `"ever"` is more appropriate.
 - `[sparsity guard] ... dropped N covariate(s)` — a covariate had an empty outcome × level
   cell and was removed **from that model only** to prevent an infinite odds ratio. Expect this
   for the rarer oesophagitis outcome, especially for `has_pud` (recorded for only ~137 people
@@ -195,7 +207,7 @@ was picked up.
 
 | Symptom | Fix |
 |---|---|
-| `Required input not found ... R9_gerd_outcome.rds` | Run step 4 first. |
+| `Required input not found ... R9_gerd_no_eso_outcome.rds` or `..._esophagitis_outcome.rds` | Run step 4 first — it creates both. |
 | `could not find function "build_gerd_outcomes"` | `GERD Data Prep R9.R` / `GERD Analysis Helpers R9.R` are not in the working directory. |
 | `unused arguments (person_id, ...)` in `select()` | Another package masked `dplyr::select`. Restart R and re-source; the scripts deliberately avoid attaching `MASS`. |
 | Out of memory | Ensure the pre-built covariate `.rds` files are present so the raw tables are never loaded; restart R between the three analyses. |

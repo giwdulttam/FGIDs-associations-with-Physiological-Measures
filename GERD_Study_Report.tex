@@ -83,8 +83,9 @@
 \begin{abstract}
 \noindent This report documents the design and implementation of a retrospective, cross-sectional
 analysis relating Fitbit-recorded \emph{sleep} and \emph{physical-activity} metrics (exposures) to two
-nested electronic-health-record (EHR) outcomes --- broad gastroesophageal reflux disease
-(\code{has_gerd}) and its erosive \emph{oesophagitis} subset (\code{has_esophagitis}) --- among
+parallel electronic-health-record (EHR) outcomes --- gastroesophageal reflux disease
+\emph{without} oesophagitis (\code{has_gerd_no_eso}, seed concept 4144111) and \emph{oesophagitis}
+(\code{has_esophagitis}, seed concept 30753) --- among
 participants of the \emph{All of Us} Research Program (Controlled Tier CDR v9, C2024Q3R9) who shared
 both wearable and EHR data. The study is organized as a $2\times3$ matrix: two outcomes crossed with
 three exposure sets (sleep, activity, and a combined activity+sleep set), giving six analysis
@@ -115,7 +116,17 @@ a self-contained methodological reference for reproducing and critiquing the stu
 
 This report specifies a retrospective, cross-sectional analysis conducted in the All of Us Research Program (Controlled Tier Curated Data Repository v9, release C2024Q3R9) that relates objectively measured, Fitbit-recorded physiological exposures -- sleep and physical activity -- to acid-related upper gastrointestinal disease ascertained from electronic health records (EHR). The study is deliberately built around \emph{two} binary outcome phenotypes and \emph{three} exposure sets, yielding a $2 \times 3$ grid of six primary analysis configurations that share a single statistical engine.
 
-The two outcomes are nested EHR phenotypes, each requiring at least two condition records ($\geq 2$). The broad outcome, \code{has_gerd}, captures gastroesophageal reflux disease from all rows returned by a dedicated GERD condition pull. The stricter outcome, \code{has_esophagitis}, is the erosive subset -- GERD records whose standard concept name contains ``esophagitis'' or ``oesophagitis'' -- and is seeded conceptually by concept 4223293 (``GERD with esophagitis''). Because \code{has_esophagitis} is a strict subset nested within the same GERD-record pull, it represents a rarer, more specific phenotype of objective mucosal injury that is analyzed in parallel with the broad, largely symptom-coded \code{has_gerd}.
+The two outcomes are \emph{parallel} EHR phenotypes, each requiring at least two condition records
+($\geq 2$) and each drawn from its own dedicated, descendant-expanded condition pull.
+\code{has_gerd_no_eso} captures gastroesophageal reflux disease \emph{without} oesophagitis (seed
+concept \textbf{4144111}) --- essentially non-erosive reflux disease, dominated by symptom-based
+diagnosis. \code{has_esophagitis} captures oesophagitis (seed concept \textbf{30753}), the phenotype
+carrying documented mucosal injury. Because the two come from separate pulls rather than one broad pull
+subdivided by concept name, neither is a subset of the other: they are distinct clinical entities
+sitting on either side of the erosive/non-erosive divide. They are not mutually exclusive either --- a
+participant may accumulate codes from both over time, and the pipeline quantifies that overlap
+explicitly. Analysing them side by side is what allows the study to ask whether physiological exposures
+act on symptom perception, on measurable tissue damage, or on both.
 
 The three exposure sets are each analyzed against \emph{both} outcomes. (A) Sleep exposures are cohort quartiles (with Q1 as the reference level) of average nightly minutes asleep, minutes in bed, minutes awake, minutes restless, deep, light, and REM sleep, and sleep efficiency (asleep divided by in-bed). (B) Activity exposures are cohort quartiles of average daily steps, lightly, fairly, very, and total active minutes, sedentary minutes, and a corrected maximum daily heart rate. (C) The combined set operates on the intersection cohort (participants with valid sleep \emph{and} valid activity streams) and analyzes each of the roughly fifteen exposures separately, plus mutually-adjusted models that carry a sleep quartile and an activity quartile together in the same equation (for example, minutes-asleep quartile jointly with steps quartile).
 
@@ -123,14 +134,14 @@ The three exposure sets are each analyzed against \emph{both} outcomes. (A) Slee
 \centering
 \begin{tabular}{lcc}
 \toprule
-Exposure set & Outcome \code{has_gerd} & Outcome \code{has_esophagitis} \\
+Exposure set & Outcome \code{has_gerd_no_eso} & Outcome \code{has_esophagitis} \\
 \midrule
 (A) Sleep quartiles & Config 1 & Config 2 \\
 (B) Activity quartiles & Config 3 & Config 4 \\
 (C) Combined (+ mutually adjusted) & Config 5 & Config 6 \\
 \bottomrule
 \end{tabular}
-\caption{The six analysis configurations formed by crossing three exposure sets with two nested outcome phenotypes. Every configuration is fit with the identical modeling engine.}
+\caption{The six analysis configurations formed by crossing three exposure sets with the two parallel outcome phenotypes. Every configuration is fit with the identical modeling engine.}
 \end{table}
 
 To guarantee that all six configurations use identical statistics, definitions, and reporting, the design centralizes methodology in a shared engine file, ``GERD Analysis Helpers R9.R''. That helper defines the outcome objects and factor labels (\code{GERD_OUTCOMES} with ``No GERD''/``GERD'' and ``No oesophagitis''/``Oesophagitis''), the exposure lists (\code{SLEEP_EXPOSURES}, \code{ACTIVITY_EXPOSURES}), the adjustment set (\code{GERD_ADJ_COVARS}, which adds \code{has_pud} and \code{has_ibs} relative to the antecedent IBS study and uses the Charlson Comorbidity Index categorically by default), the master label lookup (\code{GERD_LABELS}), and the reusable functions \code{prep_modeling_df()}, \code{descriptive_table()}, \code{univariate_table()}, \code{run_models_for_outcome()}, and \code{run_diagnostics()}. A single dispatcher, \code{analyze_all_outcomes()}, loops over both outcomes so that each analysis file merely builds its data frame, sources the helper, and calls the dispatcher.
@@ -138,7 +149,9 @@ To guarantee that all six configurations use identical statistics, definitions, 
 The deliverables are all new R files; no existing notebook is edited:
 
 \begin{itemize}
-  \item ``GERD Outcome Data Upload R9.R'' -- the dual-phenotype outcome pull (seeds concepts 318800 and 4223293, expanding to standard descendants), producing \code{R9_gerd_outcome.rds}.
+  \item ``GERD Outcome Data Upload R9.R'' -- two separate descendant-expanded outcome pulls, one per
+  phenotype (seed 4144111 and seed 30753), producing \code{R9_gerd_no_eso_outcome.rds} and
+  \code{R9_esophagitis_outcome.rds}, plus an overlap report.
   \item ``GERD Analysis Helpers R9.R'' -- the shared modeling engine described above.
   \item ``Sleep and GERD Analysis File R9.R'' -- sleep exposures against both outcomes.
   \item ``Activity and GERD Analysis File R9.R'' -- activity exposures against both outcomes.
@@ -154,7 +167,11 @@ Primary analytic outputs are \code{R9_final_analysis_sleep_gerd_df.rds}, \code{R
 
 Gastroesophageal reflux disease (GERD) is among the most prevalent chronic gastrointestinal conditions in adults, defined clinically as troublesome symptoms or mucosal complications arising when gastric contents reflux into the oesophagus. It sits at the intersection of two overlapping disease constructs. On one side are the acid-related structural disorders, in which excess oesophageal acid exposure produces objective epithelial injury -- erosions, ulceration, stricture, and Barrett metaplasia. On the other side are the functional and symptom-defined presentations, in which patients experience heartburn, regurgitation, and non-cardiac chest pain in the absence of, or out of proportion to, visible mucosal damage. This latter category shares mechanistic and epidemiologic features with the functional gastrointestinal disorders (now termed disorders of gut--brain interaction), including a prominent role for visceral hypersensitivity, altered central pain processing, and psychosocial and behavioral modulation of symptom burden.
 
-This dual character motivates the study's two nested phenotypes. Broad GERD (\code{has_gerd}) is dominated by symptom-coded and clinically diagnosed reflux and therefore behaves partly as a disorder of gut--brain interaction, whereas erosive oesophagitis (\code{has_esophagitis}) isolates the subset with documented, objective mucosal injury. Studying both in parallel lets us ask whether physiological exposures act on subjective symptom reporting, on measurable tissue damage, or on both, and whether the strength of association differs between the sensory/perceptual and the structural manifestations of reflux.
+This dual character motivates the study's two parallel phenotypes, which are deliberately drawn on
+either side of the erosive divide. GERD without oesophagitis (\code{has_gerd_no_eso}) is diagnosed
+predominantly on symptoms in the absence of documented mucosal damage, and therefore behaves largely as
+a disorder of gut--brain interaction. Oesophagitis (\code{has_esophagitis}) is defined by objective
+tissue injury. Studying both in parallel lets us ask whether physiological exposures act on subjective symptom reporting, on measurable tissue damage, or on both, and whether the strength of association differs between the sensory/perceptual and the structural manifestations of reflux.
 
 \subsection{The Gut-Brain Axis and Behavioral-Physiological Exposures}
 
@@ -170,7 +187,7 @@ Several partially overlapping mechanisms make both insufficient or fragmented sl
 
 \paragraph{Delayed acid clearance.} Oesophageal acid clearance depends on primary peristalsis triggered by swallowing and on neutralization by swallowed, bicarbonate-rich saliva. Both swallowing frequency and salivary flow fall markedly during sleep, and this suppression is exaggerated by sleep deprivation and fragmentation. The result is slower restoration of normal intraluminal pH after a reflux event, again lengthening mucosal acid exposure. Reduced daytime physical activity may compound impaired motility indirectly through its downstream metabolic and autonomic effects.
 
-\paragraph{Visceral hypersensitivity.} Experimental sleep deprivation lowers the oesophageal pain threshold, producing hyperalgesia to acid and mechanical distension. This heightened afferent sensitivity increases symptom reporting for a given quantum of acid exposure and is a core feature of the gut--brain-interaction component of reflux. This pathway predicts that poor sleep will associate with symptom-defined \code{has_gerd} even where objective injury is modest, and it is a mechanism through which sleep can influence perceived disease independently of tissue damage.
+\paragraph{Visceral hypersensitivity.} Experimental sleep deprivation lowers the oesophageal pain threshold, producing hyperalgesia to acid and mechanical distension. This heightened afferent sensitivity increases symptom reporting for a given quantum of acid exposure and is a core feature of the gut--brain-interaction component of reflux. This pathway predicts that poor sleep will associate with symptom-defined \code{has_gerd_no_eso} even where objective injury is modest, and it is a mechanism through which sleep can influence perceived disease independently of tissue damage.
 
 \paragraph{Autonomic and vagal tone.} Both habitual physical activity and healthy sleep shape autonomic balance, and vagal tone modulates lower oesophageal sphincter (LES) pressure and the frequency of transient LES relaxations (TLESRs), the dominant mechanism of reflux events. Disrupted sleep and physical deconditioning shift autonomic balance in directions associated with impaired sphincter function and altered gastric accommodation and emptying. The corrected maximum daily heart rate is included in part as a proxy that carries autonomic and cardiorespiratory-fitness information alongside the volume and intensity activity metrics.
 
@@ -182,7 +199,12 @@ Several partially overlapping mechanisms make both insufficient or fragmented sl
 
 Broad GERD ascertained from EHR condition codes is heterogeneous: it aggregates objective erosive disease with a large fraction of symptom-driven, non-erosive, and empirically treated reflux, and it is susceptible to differential coding by healthcare utilization and to misclassification of functional heartburn as GERD. Erosive oesophagitis (\code{has_esophagitis}), by contrast, requires documentation consistent with visible mucosal injury and thus anchors the analysis to a more objective, endoscopically grounded endpoint. Several considerations make it a valuable second phenotype rather than a redundant one.
 
-First, the two phenotypes plausibly load on different mechanisms: symptom-defined GERD is more strongly shaped by visceral hypersensitivity and central pain processing (sensitive to sleep-related hyperalgesia), whereas erosive disease is more directly a function of cumulative acid-contact time and barrier failure (sensitive to supine exposure, delayed clearance, and adiposity). Contrasting the exposure associations across the two outcomes is therefore mechanistically informative. Second, erosive oesophagitis is less vulnerable to the diagnostic-labeling noise that inflates symptom-coded GERD, so a concordant signal across both phenotypes strengthens causal interpretation, while a signal confined to symptom-defined GERD points toward a perceptual rather than a structural pathway. Third, because \code{has_esophagitis} is a strict subset nested within the same GERD-record pull, it is by construction rarer than broad GERD; this reduces statistical power and can widen confidence intervals, which the analysis accommodates through complete-case reporting, multiplicity control, and diagnostic checks for separation and unstable standard errors. Reporting both phenotypes with the identical modeling engine makes the comparison fair and transparent.
+First, the two phenotypes plausibly load on different mechanisms: symptom-defined GERD is more strongly shaped by visceral hypersensitivity and central pain processing (sensitive to sleep-related hyperalgesia), whereas erosive disease is more directly a function of cumulative acid-contact time and barrier failure (sensitive to supine exposure, delayed clearance, and adiposity). Contrasting the exposure associations across the two outcomes is therefore mechanistically informative. Second, erosive oesophagitis is less vulnerable to the diagnostic-labeling noise that inflates symptom-coded GERD, so a concordant signal across both phenotypes strengthens causal interpretation, while a signal confined to symptom-defined GERD points toward a perceptual rather than a structural pathway. Third, because the two phenotypes are drawn from separate pulls rather than nested, a contrast between
+them is a contrast between distinct clinical entities rather than between a set and its own subset ---
+which makes any divergence in exposure association directly interpretable. Oesophagitis is nonetheless
+expected to be the rarer of the two, which reduces power and widens confidence intervals; the analysis
+accommodates this through complete-case reporting, multiplicity control, and explicit diagnostic checks
+for separation and unstable standard errors. Reporting both phenotypes with the identical modeling engine makes the comparison fair and transparent.
 
 \subsection{Rationale and the All of Us Research Opportunity}
 
@@ -192,14 +214,14 @@ The design mirrors the project's antecedent IBS sleep study, constipation activi
 
 \subsection{Research Question and Directional Hypothesis}
 
-The central research question is whether objectively measured sleep and physical activity are associated with the odds of broad GERD and of erosive oesophagitis in Fitbit-sharing All of Us participants, and whether any such associations persist after adjustment for demographic, socioeconomic, anthropometric, comorbidity, and medication confounders. The directional hypothesis is that greater sleep quantity and quality (for example, higher minutes asleep, higher sleep efficiency, and more consolidated sleep) and greater physical activity (for example, higher daily steps and more active minutes, with correspondingly lower sedentary time) associate with \emph{lower} odds of both GERD and oesophagitis -- that is, upper quartiles (Q2--Q4) will carry adjusted odds ratios below unity relative to Q1. We anticipate that these associations will attenuate after covariate adjustment -- particularly for activity exposures, where BMI lies partly on the causal pathway -- but that they will persist rather than disappear. Given the mechanistic profile described above, we expect the acid-exposure-dependent pathways to register on the erosive \code{has_esophagitis} phenotype, while sleep-related hyperalgesia may leave a signal on symptom-defined \code{has_gerd} even where mucosal injury is limited. Because the design is cross-sectional, all primary estimates are interpreted as associations; the post-Fitbit temporal outcome definition provides the strongest available guard against the reverse-causation pathway in which nocturnal reflux itself fragments sleep.\section{Study Design Overview}
+The central research question is whether objectively measured sleep and physical activity are associated with the odds of broad GERD and of erosive oesophagitis in Fitbit-sharing All of Us participants, and whether any such associations persist after adjustment for demographic, socioeconomic, anthropometric, comorbidity, and medication confounders. The directional hypothesis is that greater sleep quantity and quality (for example, higher minutes asleep, higher sleep efficiency, and more consolidated sleep) and greater physical activity (for example, higher daily steps and more active minutes, with correspondingly lower sedentary time) associate with \emph{lower} odds of both GERD and oesophagitis -- that is, upper quartiles (Q2--Q4) will carry adjusted odds ratios below unity relative to Q1. We anticipate that these associations will attenuate after covariate adjustment -- particularly for activity exposures, where BMI lies partly on the causal pathway -- but that they will persist rather than disappear. Given the mechanistic profile described above, we expect the acid-exposure-dependent pathways to register on the erosive \code{has_esophagitis} phenotype, while sleep-related hyperalgesia may leave a signal on symptom-defined \code{has_gerd_no_eso} even where mucosal injury is limited. Because the design is cross-sectional, all primary estimates are interpreted as associations; the post-Fitbit temporal outcome definition provides the strongest available guard against the reverse-causation pathway in which nocturnal reflux itself fragments sleep.\section{Study Design Overview}
 
 This study is a retrospective, cross-sectional analysis conducted in the All of Us Research
 Program using the Controlled Tier Curated Data Repository (CDR) v9, release C2024Q3R9. It relates
 wearable-recorded physiological exposures, derived from Fitbit devices, to acid-related upper
 gastrointestinal disease captured in the electronic health record (EHR). The analysis estimates
-associations between habitual sleep and physical-activity patterns and the odds of two nested
-EHR-defined outcomes: broad gastroesophageal reflux disease (\code{has_gerd}) and the more specific
+associations between habitual sleep and physical-activity patterns and the odds of two parallel
+EHR-defined outcomes: gastroesophageal reflux disease without oesophagitis (\code{has_gerd_no_eso}) and the
 erosive subset (\code{has_esophagitis}). Because the design is cross-sectional, the primary
 estimands are associations rather than causal effects; a post-Fitbit temporal outcome definition is
 carried as the principal guard against reverse causation, since nocturnal reflux is itself known to
@@ -241,7 +263,9 @@ Population & Fitbit-sharers; age $\geq 18$ at first Fitbit date; sharing EHR (co
 \addlinespace
 Exposures & Cohort quartiles (Q1 reference) of Fitbit sleep and activity metrics; combined set adds mutually adjusted sleep $+$ activity models \\
 \addlinespace
-Outcomes & \code{has_gerd} (broad GERD, $\geq 2$ records) and \code{has_esophagitis} (erosive subset, $\geq 2$ records, concept-name match), a nested phenotype \\
+Outcomes & \code{has_gerd_no_eso} (GERD without oesophagitis, seed 4144111) and
+\code{has_esophagitis} (oesophagitis, seed 30753); $\geq 2$ records each, two separate pulls,
+parallel rather than nested \\
 \addlinespace
 Primary model & Multivariable logistic regression; $\exp(\beta_j)$ is the adjusted odds ratio for quartile $j$ versus Q1 \\
 \addlinespace
@@ -265,7 +289,7 @@ Sensitivity analyses & Distinct-date GERD; post-Fitbit temporal GERD; sleep $\ti
 \subsection{The Six Analysis Configurations}
 
 The analytic space is the $2 \times 3$ crossing of outcomes and exposure sets shown in
-Table~\ref{tab:six-configs}. Rows correspond to the two nested outcomes and columns correspond to the
+Table~\ref{tab:six-configs}. Rows correspond to the two parallel outcomes and columns correspond to the
 three exposure sets. Each of the three exposure sets is implemented by a single analysis file that
 builds one modeling data frame and then loops over both outcomes via the shared driver
 \code{analyze_all_outcomes()}; consequently the two configurations in a given column share the same
@@ -280,7 +304,7 @@ the outcome loop is internal to a single script, not split across scripts.
 \toprule
 Outcome & (A) Sleep exposures & (B) Activity exposures & (C) Combined (activity $+$ sleep) \\
 \midrule
-\code{has_gerd} \newline (broad GERD) &
+\code{has_gerd_no_eso} \newline (GERD without oesophagitis) &
 \textbf{C1}. File \code{Sleep and GERD Analysis File R9.R}; output \code{R9_final_analysis_sleep_gerd_df.rds} &
 \textbf{C3}. File \code{Activity and GERD Analysis File R9.R}; output \code{R9_final_analysis_activity_gerd_df.rds} &
 \textbf{C5}. File \code{Activity Sleep and GERD Analysis File R9.R}; output \code{R9_final_analysis_activity_sleep_gerd_df.rds} \\
@@ -324,7 +348,7 @@ frames and invoke the engine. The primary modeling outputs are the three
 Deliverable file & Role \\
 \midrule
 \code{GERD Outcome Data Upload R9.R} &
-Dual-phenotype outcome pull; seeds concepts 318800 (GERD) and 4223293 (GERD with esophagitis) and
+Two separate descendant-expanded pulls, seeds 4144111 (GERD without oesophagitis) and 30753 (oesophagitis), each
 expands to all standard descendants, restricted to Fitbit-sharers, producing
 \code{R9_gerd_outcome.rds}, \code{R9_gerd_status.rds}, and \code{R9_esophagitis_status.rds} \\
 \addlinespace
@@ -358,12 +382,11 @@ notebook is edited.}
 A dedicated outcome pull is required because the existing comorbidity object
 \code{R9_condition_df.rds} does not contain GERD condition records. The outcome upload therefore seeds
 the two GERD concepts and expands to all standard descendants using the \code{cb_criteria} path-match
-pattern. Because that pull is already GERD-only, \code{has_gerd} is computed over all pulled rows
+pattern. Because that pull is already GERD-only, \code{has_gerd_no_eso} is computed over all pulled rows
 rather than by re-filtering on only the two seed concept identifiers; re-filtering on the seeds alone
 would incorrectly drop descendant-coded cases. \code{has_esophagitis} is then identified within the
-same pull by a concept-name match on ``esophagitis'' / ``oesophagitis'' (seeded by concept 4223293),
-making it a strict subset phenotype nested within the broad GERD pull and, as the erosive definition,
-rarer than broad GERD.
+a single pull by a concept-name match. That approach has been superseded: each phenotype now comes from
+its own descendant-expanded pull, so membership depends only on which file a record is in.
 
 \subsection{Shared-Helper Architecture and Statistical Identity}
 \label{sec:model-not-here}
@@ -459,7 +482,7 @@ proxy for this autonomic/fitness axis.
 Sleep deprivation lowers visceral pain thresholds, so the same acid exposure can produce more symptoms.
 This pathway acts preferentially on the symptom-defined broad GERD phenotype rather than on objective
 mucosal injury, and it is the principal reason the two outcomes are analyzed in parallel: an exposure
-that acts through perception should show a stronger association with \code{has_gerd} than with
+that acts through perception should show a stronger association with \code{has_gerd_no_eso} than with
 \code{has_esophagitis}, whereas one acting through acid contact time should show the reverse or an equal
 association.
 
@@ -678,14 +701,18 @@ during development and are catalogued in Section~\ref{sec:defects}.
 \section{Outcome Ascertainment: GERD and Oesophagitis}
 %======================================================================
 
-\subsection{Two nested phenotypes}
+\subsection{Two parallel phenotypes}
 Both outcomes follow the project's ``$\geq 2$ diagnosis codes'' specificity rule:
 \begin{align*}
 \texttt{has\_gerd} &= \mathbb{1}\{\text{$\geq 2$ GERD condition records}\}, \\
 \texttt{has\_esophagitis} &= \mathbb{1}\{\text{$\geq 2$ GERD records named ``esophagitis''}\}.
 \end{align*}
-Because every oesophagitis record is also a GERD record, \code{has_esophagitis} is a strict subset of
-\code{has_gerd}: any participant with two esophagitis-coded records necessarily has two GERD records.
+The two phenotypes come from two \emph{separate} descendant-expanded pulls, so neither is a subset of
+the other. \code{has_gerd_no_eso} is reflux disease coded explicitly as being \emph{without}
+oesophagitis; \code{has_esophagitis} is oesophagitis. They are not mutually exclusive --- a participant
+may accumulate codes of both kinds over time, for instance if oesophagitis is documented at one
+endoscopy and non-erosive reflux coded at a later visit --- and the upload script reports that overlap
+so it can be quantified in the manuscript.
 The two outcomes are nonetheless analyzed as \emph{separate} binary outcomes on the full cohort
 (non-cases coded \code{FALSE}). Broad GERD is dominated by symptom-coded reflux and behaves partly as a
 disorder of gut--brain interaction; oesophagitis isolates the erosive subset with objective mucosal
@@ -703,8 +730,8 @@ mechanism used for the constipation outcome).
 \toprule
 \textbf{Concept ID} & \textbf{Standard concept name} \\
 \midrule
-318800 & Gastroesophageal reflux disease \\
-4223293 & Gastroesophageal reflux disease with esophagitis \\
+4144111 & Gastroesophageal reflux disease without oesophagitis \\
+30753 & Oesophagitis \\
 \bottomrule
 \end{tabular}
 \caption{GERD seed concepts. The \code{cb_criteria} join expands these to all standard descendants, so
@@ -723,14 +750,15 @@ clause.
 \subsection{The descendant-filter subtlety}
 \label{sec:subtlety}
 Because \code{R9_gerd_outcome.rds} is \emph{already} a GERD-only pull (every row is a GERD descendant
-concept), \code{has_gerd} is computed over \emph{all} rows of that table rather than by re-filtering on
-the two seed IDs. Re-filtering on only \code{c(318800, 4223293)} would silently drop every
-descendant-coded case and badly undercount GERD. The analysis therefore keeps a documented
+concept set, each phenotype is computed over \emph{all} rows of its own file rather than by re-filtering
+on the seed ID. Re-filtering on only \code{c(4144111)} or \code{c(30753)} would silently drop every
+descendant-coded case and badly undercount the phenotype. The analysis therefore keeps a documented
 \code{GERD_CONCEPT_IDS} vector for transparency but leaves the in-analysis \code{filter()} commented
 out; a user who exports the \emph{full} descendant list may paste it in and enable the explicit filter.
 
 \subsection{Identifying the oesophagitis subset}
-Within the pulled GERD rows, oesophagitis records are flagged by a concept-name match,
+Earlier versions of this study used a single broad-GERD pull and carved out an oesophagitis subset by
+concept-name matching,
 \code{grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)}. This robustly
 captures ``GERD with esophagitis'' and its descendants even if the exact descendant concept IDs vary
 across releases, and it is applied identically in the outcome-upload preview and in all three analysis
@@ -744,9 +772,9 @@ of the two GERD seeds can add those seed IDs to the pull (documented in the uplo
 \toprule
 \textbf{Variable} & \textbf{Rule} & \textbf{Purpose} \\
 \midrule
-\code{has_gerd} & $\geq 2$ GERD records, first $\geq 180$ days after the first Fitbit record & Primary broad outcome (paper-matching temporal rule; \code{GERD_PRIMARY_DEF} switches to the ``ever'' rule). \\
+\code{has_gerd_no_eso} & $\geq 2$ records in the 4144111 pull, first $\geq 180$ days after the first Fitbit record & Primary GERD-without-oesophagitis outcome (paper-matching temporal rule; \code{GERD_PRIMARY_DEF} switches to the ``ever'' rule). \\
 \code{has_esophagitis} & $\geq 2$ esophagitis-named records & Primary erosive outcome. \\
-\code{has_gerd_dates} & $\geq 2$ records on \emph{distinct} dates & Specificity sensitivity check. \\
+\code{has_gerd_no_eso_dates} & $\geq 2$ records on \emph{distinct} dates & Specificity sensitivity check. \\
 \code{has_post_fitbit_gerd} & first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes &
 Temporal ordering; reverse-causation guard. \\
 \code{severe_gerd_binary} & GERD \emph{and} $\geq 2$ post-diagnosis PPI/$H_2$RA dates & Optional
@@ -767,7 +795,7 @@ The outcome pull does not enumerate GERD concept IDs by hand; it seeds two stand
 BigQuery expand the hierarchy. The nested query has three logical steps:
 \begin{enumerate}[leftmargin=1.5em,itemsep=1pt]
   \item \textbf{Seed to hierarchy rows.} A subquery selects rows of \code{cb_criteria} whose
-  \code{concept_id} is a seed (318800 or 4223293) and whose \code{full_text} marks them as standard
+  \code{concept_id} is the seed (4144111 or 30753) and whose \code{full_text} marks them as standard
   ``rank-1'' entries, returning their hierarchy \code{id}s.
   \item \textbf{Path match to descendants.} The outer \code{cb_criteria} scan keeps every standard,
   selectable concept whose materialized \code{path} lies on, above, or below a seed id --- captured by
@@ -1238,7 +1266,7 @@ sleep_results <- analyze_all_outcomes(modeling_df, exposures = SLEEP_EXPOSURES,
   from a candidate vector, logging which one it used. This is the mechanism behind
   prefer-pre-built-else-derive, and it makes provenance explicit in the run log.
   \item \code{build_gerd_outcomes(pull, fitbit_dates, date_col)} --- derives all four outcome columns
-  (\code{has_gerd_ever}, \code{has_gerd_post_fitbit}, and the two oesophagitis equivalents) from the
+  (\code{has_gerd_no_eso_ever}, \code{has_gerd_no_eso_post_fitbit}, and the two oesophagitis equivalents) from the
   single pull, and prints the case counts under each rule.
   \item \code{gerd_load_covariates(anchor, ...)} --- assembles the covariate bundle for the sleep or
   activity anchor, applying the column-slimming rules of Section~\ref{sec:joinhazards} and coalescing
@@ -1360,7 +1388,7 @@ with the sleep effect on oesophagitis (C2) or the activity effect on GERD (C3).
 The analysis does not emit exploratory objects for later reshaping; it emits the manuscript's tables
 and figures directly. Running any driver writes, for \emph{both} outcomes, a fixed set of files into
 \code{./manuscript_output/}, prefixed by exposure set (\code{sleep_}, \code{activity_},
-\code{combined_}) and then by outcome (\code{gerd_}, \code{esophagitis_}).
+\code{combined_}) and then by outcome (\code{gerd_no_eso_}, \code{esophagitis_}).
 
 \begin{table}[h]\centering\footnotesize
 \begin{tabular}{@{}p{6.0cm}p{7.6cm}@{}}
@@ -1545,7 +1573,7 @@ C6 & Oesophagitis & Combined (15 + pairs) & Intersection & Activity Sleep and GE
 
 \subsection{C1 --- Sleep and broad GERD}
 The reference configuration. On the $\geq 180$-night sleep cohort, each of the eight sleep quartiles is
-regressed on \code{has_gerd} unadjusted and then adjusted for the full covariate set, with a
+regressed on \code{has_gerd_no_eso} unadjusted and then adjusted for the full covariate set, with a
 full-vs-backward pairing per exposure. This is the direct GERD analogue of the project's IBS sleep
 study and the primary test of the ``better sleep, lower reflux odds'' hypothesis.
 
@@ -1557,7 +1585,7 @@ not only on symptom reporting.
 
 \subsection{C3 --- Activity and broad GERD}
 On the $\geq 30$-valid-day activity cohort, the seven activity quartiles (steps, four activity-intensity
-bands, sedentary minutes, and corrected max heart rate) are modeled against \code{has_gerd}. Sedentary
+bands, sedentary minutes, and corrected max heart rate) are modeled against \code{has_gerd_no_eso}. Sedentary
 time and low step counts are hypothesized to associate with higher odds; the corrected max-HR exposure
 provides a cardiovascular-fitness proxy.
 
@@ -1656,7 +1684,7 @@ explicit safeguard rather than a post-hoc diagnostic.
 First, one covariate is extraordinarily rare. \code{has_pud} is recorded for \textbf{137 participants}
 across the entire source population (Table~\ref{tab:prebuilt}) --- well under one percent of the
 analytic cohort. Second, the erosive oesophagitis outcome is itself uncommon by construction, being a
-strict subset of an already-selective phenotype. When a rare covariate meets a rare outcome, the
+the less common of the two phenotypes in most EHR cohorts. When a rare covariate meets a rare outcome, the
 cross-tabulation acquires empty cells.
 
 An empty cell is not a minor inconvenience. If no participant with peptic ulcer disease has
@@ -1804,7 +1832,7 @@ robustness check.
 \label{sec:sensitivity}
 %======================================================================
 \begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
-  \item \textbf{Distinct-date GERD} (\code{has_gerd_dates}) --- the stricter ``$\geq 2$ distinct dates''
+  \item \textbf{Distinct-date GERD} (\code{has_gerd_no_eso_dates}) --- the stricter ``$\geq 2$ distinct dates''
   phenotype, testing robustness to same-day code inflation.
   \item \textbf{Post-Fitbit temporal GERD} (\code{has_post_fitbit_gerd}) --- restricts cases to those
   whose first GERD code appears $\geq 180$ days \emph{after} the first Fitbit date, so the measured
@@ -1839,7 +1867,7 @@ upload, but global find-and-replace was insufficient; whole blocks were removed,
 \toprule
 \textbf{Action} & \textbf{Detail} \\
 \midrule
-\textbf{Swapped} & \code{has_ibs} $\rightarrow$ \code{has_gerd} and added \code{has_esophagitis}; outcome
+\textbf{Swapped} & \code{has_ibs} $\rightarrow$ \code{has_gerd_no_eso} plus \code{has_esophagitis}; outcome
 labels; output filenames $\rightarrow$ \code{R9_final_analysis_*_gerd_df.rds}. \\
 \textbf{Swapped source} & IBS rows from \code{dataset_32338507_condition_df} $\rightarrow$ the dedicated
 \code{R9_gerd_outcome} pull. \\
@@ -2072,7 +2100,11 @@ population. Estimates should not be extrapolated to non-wearers without caution.
   cannot establish causation, and reflux itself disrupts sleep.
   \item \textbf{EHR phenotyping.} Diagnosis-code outcomes miss undiagnosed or over-the-counter-managed
   reflux and vary with coding practice; the $\geq 2$-record rule trades sensitivity for specificity.
-  \item \textbf{Name-based oesophagitis identification.} Defining the erosive subset by concept-name
+  \item \textbf{Oesophagitis descendant scope.} The oesophagitis phenotype is the descendant set of
+  concept 30753, which may include non-reflux causes (eosinophilic, infectious, pill-induced or
+  radiation oesophagitis). Unless the seed is narrowed in the Cohort Builder, the outcome is
+  ``oesophagitis'' rather than ``reflux oesophagitis'' specifically, and estimates should be read
+  accordingly. The superseded approach of defining the erosive subset by concept-name
   match captures ``GERD with esophagitis'' but may miss erosive-esophagitis concepts coded outside the
   GERD hierarchy unless their seeds are added in the Cohort Builder.
   \item \textbf{Wearable selection.} Fitbit users are not representative of the general population.
@@ -2130,7 +2162,7 @@ directly comparable. Table~\ref{tab:portfolio} places GERD within the portfolio.
 IBS & \code{has_ibs} (+ subtypes) & Multinomial subtype models; severe-IBS medication subgroup. \\
 Functional dyspepsia & \code{has_fd} (strict/broad) & Rome-based phenotypes; early-satiety extension. \\
 Constipation & \code{has_constipation} & Simple binary outcome; heart-rate-correction activity analysis. \\
-\textbf{GERD / oesophagitis} & \code{has_gerd}; \code{has_esophagitis} & Two nested acid-related phenotypes; PUD and IBS covariates; sleep, activity, and combined exposures under one shared engine. \\
+\textbf{GERD / oesophagitis} & \code{has_gerd_no_eso}; \code{has_esophagitis} & Two nested acid-related phenotypes; PUD and IBS covariates; sleep, activity, and combined exposures under one shared engine. \\
 \bottomrule
 \end{tabular}
 \caption{The GERD/oesophagitis analysis within the functional-GI-disorder portfolio.}
@@ -2206,9 +2238,9 @@ whether sleep and activity are associated with reflux disease and its erosive fo
 \midrule
 \endhead
 \code{R9_gerd_outcome.rds} & Raw GERD condition records (+ \code{is_esophagitis} flag). \\
-\code{R9_gerd_status.rds} & \code{has_gerd} ($\geq 2$ records) per participant. \\
+\code{R9_gerd_status.rds} & \code{has_gerd_no_eso} ($\geq 2$ records) per participant. \\
 \code{R9_esophagitis_status.rds} & \code{has_esophagitis} ($\geq 2$ esophagitis-named records). \\
-\code{R9_gerd_status_dates.rds} & \code{has_gerd_dates} ($\geq 2$ distinct dates). \\
+\code{R9_gerd_status_dates.rds} & \code{has_gerd_no_eso_dates} ($\geq 2$ distinct dates). \\
 \code{R9_gerd_post_fitbit_sleep.rds} & \code{has_post_fitbit_gerd} temporal flag (sleep anchor). \\
 \code{R9_final_analysis_sleep_gerd_df.rds} & \textbf{Sleep} modeling frame (configs C1, C2). \\
 \code{R9_final_analysis_activity_gerd_df.rds} & \textbf{Activity} modeling frame (configs C3, C4). \\
@@ -2232,8 +2264,8 @@ whether sleep and activity are associated with reflux disease and its erosive fo
 \toprule
 \textbf{Purpose} & \textbf{Concept ID(s)} & \textbf{Note} \\
 \midrule
-GERD (outcome seeds) & 318800; 4223293 & Descendant-expanded. \\
-Oesophagitis subset & 4223293 (+ name match) & Erosive subset. \\
+GERD without oesophagitis & \textbf{4144111} & Own pull, descendant-expanded. \\
+Oesophagitis & \textbf{30753} & Own pull, descendant-expanded. \\
 BMI measurement & 3038553 & Body mass index. \\
 IBS (covariate) & 75576; 4234788; 4261072; 4057826 & General + subtypes. \\
 Peptic ulcer disease & 4318534; 4134146; 4265600; 4027663 & Via \code{R9_pud_status}. \\
@@ -2316,9 +2348,9 @@ fit_combined_pair <- function(df, outcome_col, outcome_labels, sleep_expo, act_e
 \code{avg_daily_max_hr_minute_all_days} & Corrected mean of daily maximum heart rate. \\
 \code{min_asleep_quartile}, \ldots & Cohort quartile (Q1 reference) of a sleep metric --- a modeled exposure. \\
 \code{step_quartile}, \ldots, \code{max_hr_minute_all_days_quartile} & Cohort quartile of an activity metric --- a modeled exposure. \\
-\code{has_gerd} & Primary broad outcome: $\geq 2$ GERD records with the first $\geq 180$ days after the first Fitbit record. \\
+\code{has_gerd_no_eso} & Primary broad outcome: $\geq 2$ GERD records with the first $\geq 180$ days after the first Fitbit record. \\
 \code{has_esophagitis} & Primary erosive outcome: $\geq 2$ esophagitis-named records. \\
-\code{has_gerd_dates} & Sensitivity: $\geq 2$ GERD records on distinct dates. \\
+\code{has_gerd_no_eso_dates} & Sensitivity: $\geq 2$ GERD records on distinct dates. \\
 \code{has_post_fitbit_gerd} & Temporal sensitivity: first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes. \\
 \code{severe_gerd_binary} & Optional: GERD \emph{and} $\geq 2$ post-diagnosis PPI/$H_2$RA dates. \\
 \code{has_pud}, \code{has_ibs} & GERD-specific gastrointestinal covariates. \\
@@ -2440,7 +2472,7 @@ This appendix summarizes, step by step, what each of the six deliverable scripts
 \subsection{\code{GERD Outcome Data Upload R9.R}}
 \begin{enumerate}[leftmargin=1.5em,itemsep=0pt]
   \item Pins the workspace CDR to v9 and constructs the \code{cb_criteria} descendant-expansion SQL for
-  seeds 318800 and 4223293, restricted to Fitbit-sharers.
+  seeds 4144111 and 30753 in two separate pulls, restricted to Fitbit-sharers.
   \item Exports the query to the workspace bucket, reads it back, and previews the captured GERD
   concepts.
   \item Flags the oesophagitis subset by concept-name match and prints its size.
@@ -2458,7 +2490,7 @@ analysis files.
 \begin{enumerate}[leftmargin=1.5em,itemsep=0pt]
   \item Loads R9 inputs; computes the first sleep date and age; cleans sleep records; builds
   participant-level sleep summaries.
-  \item Builds both outcomes (\code{has_gerd}, \code{has_esophagitis}) and the sensitivity definitions.
+  \item Builds both outcomes (\code{has_gerd_no_eso}, \code{has_esophagitis}) and the sensitivity definitions.
   \item Builds behavioral, comorbidity, PUD, IBS, Charlson, BMI, medication, and socio-economic
   covariates on the sleep anchor.
   \item Applies eligibility, assembles \code{R9_final_analysis_sleep_gerd_df}, creates integer sleep
@@ -2559,7 +2591,7 @@ activity, or both).
 \midrule
 \endhead
 \code{person_id} & chr & Participant identifier (unique per row). \\
-\code{has_gerd}, \code{has_esophagitis} & logical & The two primary outcomes. \\
+\code{has_gerd_no_eso}, \code{has_esophagitis} & logical & The two primary outcomes. \\
 \code{has_post_fitbit_gerd}, \code{severe_gerd_binary} & logical & Sensitivity outcomes (sleep file). \\
 \code{min_*_quartile} (8) & int/factor & Sleep exposures (sleep and combined frames). \\
 \code{step_quartile}, \code{*_active_quartile}, \code{sedentary_quartile}, \code{max_hr_*_quartile} & int/factor & Activity exposures (activity and combined frames). \\

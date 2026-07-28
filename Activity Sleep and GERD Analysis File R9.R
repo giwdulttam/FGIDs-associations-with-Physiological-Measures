@@ -34,8 +34,10 @@ GERD_COMBINED_ANCHOR <- "sleep"   # "sleep" (default) | "activity"
 # ==============================================================================
 # 1) OUTCOME SOURCE
 # ==============================================================================
-R9_gerd_outcome <- read_first_existing("R9_gerd_outcome.rds", "GERD outcome pull",
-                                       required = TRUE)
+R9_gerd_no_eso_outcome <- read_first_existing("R9_gerd_no_eso_outcome.rds",
+                            "GERD-without-oesophagitis pull", required = TRUE)
+R9_esophagitis_outcome <- read_first_existing("R9_esophagitis_outcome.rds",
+                            "Oesophagitis pull", required = TRUE)
 
 # ==============================================================================
 # 2) SLEEP exposures (>=180 valid nights) + first sleep date
@@ -94,7 +96,8 @@ cat("Combined-cohort covariate anchor:", GERD_COMBINED_ANCHOR, "(", anchor_col, 
 # ==============================================================================
 # 5) OUTCOMES (anchored the same way)
 # ==============================================================================
-R9_gerd_outcome_status <- build_gerd_outcomes(R9_gerd_outcome, anchor_dates, anchor_col)
+R9_gerd_outcome_status <- build_gerd_outcomes(
+  R9_gerd_no_eso_outcome, R9_esophagitis_outcome, anchor_dates, anchor_col)
 saveRDS(R9_gerd_outcome_status, "R9_gerd_outcome_status_combined.rds")
 
 # ==============================================================================
@@ -128,8 +131,8 @@ final_analysis_activity_sleep_gerd_df <- valid_population %>%
   left_join(covars_df %>% select(-any_of(c("age_at_fitbit_start","age_cat"))),
             by = "person_id") %>%
   left_join(R9_gerd_outcome_status, by = "person_id") %>%
-  mutate(across(starts_with("has_gerd"),        ~replace_na(., FALSE)),
-         across(starts_with("has_esophagitis"), ~replace_na(., FALSE)))
+  mutate(across(starts_with("has_gerd_no_eso"), ~replace_na(., FALSE)),
+         across(starts_with("has_esophagitis"),  ~replace_na(., FALSE)))
 
 final_analysis_activity_sleep_gerd_df <-
   apply_primary_outcome_def(final_analysis_activity_sleep_gerd_df) %>%
@@ -161,8 +164,9 @@ cat("\n================ COMBINED COHORT SUMMARY ================\n")
 cat("N =", nrow(final_analysis_activity_sleep_gerd_df),
     "| duplicate person_ids:",
     sum(duplicated(final_analysis_activity_sleep_gerd_df$person_id)), "\n")
-cat("GERD cases (primary):        ", sum(final_analysis_activity_sleep_gerd_df$has_gerd), "\n")
-cat("Oesophagitis cases (primary):", sum(final_analysis_activity_sleep_gerd_df$has_esophagitis), "\n")
+cat("GERD without oesophagitis (primary):", sum(final_analysis_activity_sleep_gerd_df$has_gerd_no_eso), "\n")
+cat("Oesophagitis (primary):             ", sum(final_analysis_activity_sleep_gerd_df$has_esophagitis), "\n")
+cat("Carry BOTH phenotypes:              ", sum(final_analysis_activity_sleep_gerd_df$has_gerd_no_eso & final_analysis_activity_sleep_gerd_df$has_esophagitis), "\n")
 
 # ==============================================================================
 # 9) MODEL FAMILY A -- every exposure separately, both outcomes
@@ -179,7 +183,7 @@ combined_results <- analyze_all_outcomes(
   coverage_var = "n_valid_nights",
   stub         = "combined"
 )
-str(combined_results$gerd$diagnostics)
+str(combined_results$gerd_no_eso$diagnostics)
 str(combined_results$esophagitis$diagnostics)
 
 # ==============================================================================

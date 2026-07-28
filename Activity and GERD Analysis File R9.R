@@ -2,8 +2,8 @@
 # Title: Activity and GERD / Oesophagitis Analysis (All of Us R9)
 # Description: Retrospective cross-sectional analysis of Fitbit PHYSICAL ACTIVITY
 #              metrics (exposure) and TWO acid-related outcomes:
-#                (1) has_gerd        - broad GERD
-#                (2) has_esophagitis - erosive / oesophagitis subset
+#                (1) has_gerd_no_eso - GERD without oesophagitis (seed 4144111)
+#                (2) has_esophagitis - oesophagitis                (seed 30753)
 #
 #              Activity exposures (cohort quartiles, Q1 reference): daily steps,
 #              lightly/fairly/very/total active minutes, sedentary minutes, and
@@ -31,8 +31,10 @@ source("GERD Data Prep R9.R")
 # ==============================================================================
 # 1) OUTCOME SOURCE
 # ==============================================================================
-R9_gerd_outcome <- read_first_existing("R9_gerd_outcome.rds", "GERD outcome pull",
-                                       required = TRUE)
+R9_gerd_no_eso_outcome <- read_first_existing("R9_gerd_no_eso_outcome.rds",
+                            "GERD-without-oesophagitis pull", required = TRUE)
+R9_esophagitis_outcome <- read_first_existing("R9_esophagitis_outcome.rds",
+                            "Oesophagitis pull", required = TRUE)
 
 # ==============================================================================
 # 2) ACTIVITY EXPOSURES (prefer pre-built summaries)
@@ -113,7 +115,8 @@ max_hr_df <- if (is.null(max_hr_df)) NULL else
 # 3) OUTCOMES (anchored on the first activity date)
 # ==============================================================================
 R9_gerd_outcome_status <- build_gerd_outcomes(
-  R9_gerd_outcome, first_fitbit_date_df, "first_fitbit_date")
+  R9_gerd_no_eso_outcome, R9_esophagitis_outcome,
+  first_fitbit_date_df, "first_fitbit_date")
 saveRDS(R9_gerd_outcome_status, "R9_gerd_outcome_status_activity.rds")
 
 # ==============================================================================
@@ -170,8 +173,8 @@ final_analysis_activity_gerd_df <- valid_population %>%
   left_join(covars_df %>% select(-any_of(c("age_at_fitbit_start","age_cat"))),
             by = "person_id") %>%
   left_join(R9_gerd_outcome_status, by = "person_id") %>%
-  mutate(across(starts_with("has_gerd"),        ~replace_na(., FALSE)),
-         across(starts_with("has_esophagitis"), ~replace_na(., FALSE)))
+  mutate(across(starts_with("has_gerd_no_eso"), ~replace_na(., FALSE)),
+         across(starts_with("has_esophagitis"),  ~replace_na(., FALSE)))
 
 final_analysis_activity_gerd_df <- apply_primary_outcome_def(final_analysis_activity_gerd_df) %>%
   mutate(across(any_of(GERD_BINARY_COVARS), ~replace_na(., FALSE)))
@@ -192,8 +195,9 @@ saveRDS(final_analysis_activity_gerd_df, "R9_final_analysis_activity_gerd_df.rds
 cat("\n================ ACTIVITY COHORT SUMMARY ================\n")
 cat("N =", nrow(final_analysis_activity_gerd_df),
     "| duplicate person_ids:", sum(duplicated(final_analysis_activity_gerd_df$person_id)), "\n")
-cat("GERD cases (primary):        ", sum(final_analysis_activity_gerd_df$has_gerd), "\n")
-cat("Oesophagitis cases (primary):", sum(final_analysis_activity_gerd_df$has_esophagitis), "\n")
+cat("GERD without oesophagitis (primary):", sum(final_analysis_activity_gerd_df$has_gerd_no_eso), "\n")
+cat("Oesophagitis (primary):             ", sum(final_analysis_activity_gerd_df$has_esophagitis), "\n")
+cat("Carry BOTH phenotypes:              ", sum(final_analysis_activity_gerd_df$has_gerd_no_eso & final_analysis_activity_gerd_df$has_esophagitis), "\n")
 
 # ==============================================================================
 # 7) MODELS + MANUSCRIPT OUTPUT (both outcomes)
@@ -212,7 +216,7 @@ activity_results <- analyze_all_outcomes(
   stub         = "activity"
 )
 
-str(activity_results$gerd$diagnostics)
+str(activity_results$gerd_no_eso$diagnostics)
 str(activity_results$esophagitis$diagnostics)
 
 message("Activity and GERD analysis complete. See ./manuscript_output/ (prefix 'activity_').")

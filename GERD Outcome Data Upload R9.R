@@ -1,34 +1,37 @@
 #-------------------------------------------------------------------------------
 # Title: GERD / Oesophagitis Outcome Data Upload (R9)
 # Data set: All of Us Controlled Tier CDR v9 (C2024Q3R9)
-# Description: BigQuery pull of gastroesophageal reflux disease (GERD) condition
-#              records for all participants who shared Fitbit data. This mirrors
-#              the constipation outcome upload pattern, swapping in GERD seed
-#              concepts. The output (R9_gerd_outcome.rds) is used as the OUTCOME
-#              source for ALL of the GERD analysis files:
-#                - "Sleep and GERD Analysis File R9.R"
-#                - "Activity and GERD Analysis File R9.R"
-#                - "Activity Sleep and GERD Analysis File R9.R"
 #
-#              TWO outcome phenotypes are derived downstream from this single pull:
-#                (1) has_gerd        - broad GERD (any GERD/reflux record, >=2)
-#                (2) has_esophagitis - the erosive/oesophagitis subset, i.e. GERD
-#                                      records whose standard concept name contains
-#                                      "esophagitis"/"oesophagitis" (>=2). This is
-#                                      seeded by concept 4223293 (GERD WITH
-#                                      esophagitis) and its descendants.
+# Description: BigQuery pulls of the TWO outcome phenotypes for the GERD study,
+#              for all participants who shared Fitbit data.
 #
-# NOTE: This is a NEW file. It does not modify any existing notebook.
+#                (1) GERD WITHOUT oesophagitis   seed concept 4144111
+#                    -> R9_gerd_no_eso_outcome.rds
+#                (2) Oesophagitis                seed concept 30753
+#                    -> R9_esophagitis_outcome.rds
 #
-# PRE-FLIGHT (do this in the AoU workspace before finalizing):
-#   In the All of Us Cohort Builder, search "gastroesophageal reflux" AND
-#   "reflux esophagitis"/"erosive esophagitis", select the standard concepts +
-#   descendants, and (optionally) paste the full seed concept set into the
-#   `concept_id IN (...)` clause below. The cb_criteria descendant expansion used
-#   here already captures all standard descendants of the seeds. If you want to
-#   capture reflux/erosive esophagitis concepts that are NOT descendants of
-#   318800/4223293, add their seed concept IDs to ESOPHAGITIS_SEED_IDS below and
-#   include them in the concept_id IN (...) list.
+#              These are TWO SEPARATE pulls, each descendant-expanded from its own
+#              seed. They are deliberately NOT combined into one file: keeping them
+#              apart means each phenotype is defined purely by which file a record
+#              is in, with no reliance on filtering by concept ID afterwards (which
+#              would silently drop descendant-coded cases) and no reliance on
+#              matching concept names.
+#
+#              NOTE ON DESIGN CHANGE: earlier versions of this study used a single
+#              broad-GERD pull (seed 318800) and carved out an oesophagitis subset
+#              by concept-name matching, which made the two outcomes NESTED. With
+#              the seeds below the two outcomes are PARALLEL phenotypes:
+#              non-erosive reflux disease versus oesophagitis. A participant can
+#              carry codes from both, so they are not mutually exclusive, but
+#              neither is a subset of the other.
+#
+# PRE-FLIGHT (in the AoU Cohort Builder, before a production run):
+#   * Confirm 4144111 is the intended "GERD without oesophagitis" standard concept.
+#   * Confirm the descendant set of 30753 ("Oesophagitis") matches the intended
+#     clinical scope. Its descendants may include NON-reflux oesophagitis
+#     (eosinophilic, infectious, pill-induced, radiation). If the study intends
+#     reflux oesophagitis only, restrict the seed accordingly - see
+#     ESOPHAGITIS_SEEDS below.
 # -------------------------------------------------------------------------------
 
 # Force this notebook to use the v9 Controlled Tier CDR
@@ -37,17 +40,21 @@ Sys.setenv(WORKSPACE_CDR = "fc-aou-cdr-prod-ct.C2024Q3R9")
 library(tidyverse)
 library(bigrquery)
 
-# GERD seed concepts (standard SNOMED concepts). Descendants are expanded below.
-#   318800  - Gastroesophageal reflux disease                    (broad GERD)
-#   4223293 - Gastroesophageal reflux disease with esophagitis   (oesophagitis subset seed)
-# Optional additional oesophagitis seeds to VERIFY/ADD in Cohort Builder if you
-# want reflux/erosive esophagitis not already captured as a GERD descendant:
-#   ESOPHAGITIS_SEED_IDS <- c(4223293 /*, reflux/erosive esophagitis concept ids */)
-# (verify / expand in Cohort Builder as noted in the header)
+# ==============================================================================
+# Seed concepts -- edit here if the Cohort Builder shows a different scope
+# ==============================================================================
+GERD_NO_ESO_SEEDS <- c(4144111)   # Gastroesophageal reflux disease without oesophagitis
+ESOPHAGITIS_SEEDS <- c(30753)     # Oesophagitis
 
-# This query represents dataset "GERD Outcome" for domain "condition" and was
-# generated for All of Us Controlled Tier Dataset v9
-dataset_gerd_r9_condition_sql <- paste("
+# ==============================================================================
+# Generic condition-domain pull with Cohort Builder descendant expansion
+# ==============================================================================
+pull_condition_outcome <- function(seed_concepts, export_tag, out_rds, label) {
+
+  message("\n=== Pulling: ", label, "  (seeds: ",
+          paste(seed_concepts, collapse = ", "), ") ===")
+
+  sql <- paste0("
     SELECT
         c_occurrence.person_id,
         c_occurrence.condition_concept_id,
@@ -76,7 +83,7 @@ dataset_gerd_r9_condition_sql <- paste("
                     FROM
                         `cb_criteria` cr
                     WHERE
-                        concept_id IN (318800, 4223293)
+                        concept_id IN (", paste(seed_concepts, collapse = ", "), ")
                         AND full_text LIKE '%_rank1]%'      ) a
                         ON (c.path LIKE CONCAT('%.', a.id, '.%')
                         OR c.path LIKE CONCAT('%.', a.id)
@@ -104,73 +111,63 @@ dataset_gerd_r9_condition_sql <- paste("
             ON c_occurrence.condition_concept_id = c_standard_concept.concept_id
     LEFT JOIN
         `concept` c_type
-            ON c_occurrence.condition_type_concept_id = c_type.concept_id", sep="")
+            ON c_occurrence.condition_type_concept_id = c_type.concept_id")
 
-# Formulate a Cloud Storage destination path for the data exported from BigQuery.
-# NOTE: By default data exported multiple times on the same day will overwrite older copies.
-#       But data exported on a different days will write to a new location so that historical
-#       copies can be kept as the dataset definition is changed.
-condition_gerd_r9_path <- file.path(
-  Sys.getenv("WORKSPACE_BUCKET"),
-  "bq_exports",
-  Sys.getenv("OWNER_EMAIL"),
-  strftime(lubridate::now(), "%Y%m%d"),  # Comment out this line if you want the export to always overwrite.
-  "condition_gerd_r9",
-  "condition_gerd_r9_*.csv")
-message(str_glue('The data will be written to {condition_gerd_r9_path}. Use this path when reading ',
-                 'the data into your notebooks in the future.'))
+  # Cloud Storage destination for the exported data
+  export_path <- file.path(
+    Sys.getenv("WORKSPACE_BUCKET"), "bq_exports", Sys.getenv("OWNER_EMAIL"),
+    strftime(lubridate::now(), "%Y%m%d"), export_tag, paste0(export_tag, "_*.csv"))
+  message("Writing to: ", export_path)
 
-# Perform the query and export the dataset to Cloud Storage as CSV files.
-# NOTE: You only need to run `bq_table_save` once. After that, you can
-#       just read data from the CSVs in Cloud Storage.
-bq_table_save(
-  bq_dataset_query(Sys.getenv("WORKSPACE_CDR"), dataset_gerd_r9_condition_sql, billing = Sys.getenv("GOOGLE_PROJECT")),
-  condition_gerd_r9_path,
-  destination_format = "CSV")
+  bq_table_save(
+    bq_dataset_query(Sys.getenv("WORKSPACE_CDR"), sql,
+                     billing = Sys.getenv("GOOGLE_PROJECT")),
+    export_path, destination_format = "CSV")
 
-
-# Read the data directly from Cloud Storage into memory.
-# NOTE: Alternatively you can `gsutil -m cp {condition_gerd_r9_path}` to copy these files
-#       to the Jupyter disk.
-read_bq_export_from_workspace_bucket <- function(export_path) {
-  col_types <- cols(standard_concept_name = col_character(), standard_concept_code = col_character(), condition_type_concept_name = col_character(), stop_reason = col_character(), condition_status_source_value = col_character())
-  bind_rows(
+  col_types <- cols(standard_concept_name = col_character(),
+                    standard_concept_code = col_character(),
+                    condition_type_concept_name = col_character(),
+                    stop_reason = col_character(),
+                    condition_status_source_value = col_character())
+  df <- bind_rows(
     map(system2('gsutil', args = c('ls', export_path), stdout = TRUE, stderr = TRUE),
         function(csv) {
-          message(str_glue('Loading {csv}.'))
-          chunk <- read_csv(pipe(str_glue('gsutil cat {csv}')), col_types = col_types, show_col_types = FALSE)
-          if (is.null(col_types)) {
-            col_types <- spec(chunk)
-          }
-          chunk
+          message('Loading ', csv)
+          read_csv(pipe(paste('gsutil cat', csv)), col_types = col_types,
+                   show_col_types = FALSE)
         }))
+
+  cat("\n--- ", label, " ---\n", sep = "")
+  cat("Rows:", nrow(df), " Participants:", dplyr::n_distinct(df$person_id), "\n")
+  cat("Concepts captured by descendant expansion:\n")
+  df %>% count(condition_concept_id, standard_concept_name, sort = TRUE) %>%
+    print(n = 40)
+
+  saveRDS(df, out_rds)
+  message("Saved -> ", out_rds)
+  invisible(df)
 }
-dataset_gerd_r9_condition_df <- read_bq_export_from_workspace_bucket(condition_gerd_r9_path)
 
-dim(dataset_gerd_r9_condition_df)
+# ==============================================================================
+# Run both pulls
+# ==============================================================================
+gerd_no_eso_df <- pull_condition_outcome(
+  GERD_NO_ESO_SEEDS, "condition_gerd_no_eso_r9",
+  "R9_gerd_no_eso_outcome.rds", "GERD without oesophagitis")
 
-head(dataset_gerd_r9_condition_df, 5)
+esophagitis_df <- pull_condition_outcome(
+  ESOPHAGITIS_SEEDS, "condition_esophagitis_r9",
+  "R9_esophagitis_outcome.rds", "Oesophagitis")
 
-# Quick look at which GERD concepts were captured by the descendant expansion.
-# Use this to confirm the pull matches your Cohort Builder GERD definition.
-dataset_gerd_r9_condition_df %>%
-  count(condition_concept_id, standard_concept_name, sort = TRUE) %>%
-  print(n = 50)
+# ==============================================================================
+# Overlap check -- the two phenotypes are parallel, not nested, but participants
+# may legitimately carry codes from both. Quantify that before analysis.
+# ==============================================================================
+a <- dplyr::distinct(gerd_no_eso_df, person_id)
+b <- dplyr::distinct(esophagitis_df, person_id)
+cat("\n=== Phenotype overlap (any record, before the >=2 rule) ===\n")
+cat("GERD without oesophagitis only:", nrow(dplyr::anti_join(a, b, by = "person_id")), "\n")
+cat("Oesophagitis only:             ", nrow(dplyr::anti_join(b, a, by = "person_id")), "\n")
+cat("Both:                          ", nrow(dplyr::inner_join(a, b, by = "person_id")), "\n")
 
-# Flag the oesophagitis (erosive) subset by concept-name match. The downstream
-# analysis files use exactly this rule to build has_esophagitis, so this preview
-# lets you confirm the erosive subset before running the analyses.
-dataset_gerd_r9_condition_df <- dataset_gerd_r9_condition_df %>%
-  mutate(
-    is_esophagitis = grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)
-  )
-
-cat("\n--- Oesophagitis (erosive) subset preview ---\n")
-cat("Total GERD condition rows:", nrow(dataset_gerd_r9_condition_df), "\n")
-cat("Rows flagged as oesophagitis:", sum(dataset_gerd_r9_condition_df$is_esophagitis, na.rm = TRUE), "\n")
-dataset_gerd_r9_condition_df %>%
-  filter(is_esophagitis) %>%
-  count(condition_concept_id, standard_concept_name, sort = TRUE) %>%
-  print(n = 50)
-
-saveRDS(dataset_gerd_r9_condition_df, "R9_gerd_outcome.rds")
+message("\nOutcome upload complete. Next: run any of the three analysis files.")

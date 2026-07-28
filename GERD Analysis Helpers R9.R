@@ -75,9 +75,15 @@ GERD_OUTPUT_DIR <- "manuscript_output"
 # ==============================================================================
 # 1) Outcomes, exposures, covariates, labels
 # ==============================================================================
+# The two outcome phenotypes. These are PARALLEL, not nested: "GERD without
+# oesophagitis" (seed concept 4144111) and "Oesophagitis" (seed concept 30753)
+# come from two separate descendant-expanded pulls. A participant may carry codes
+# from both, so they are not mutually exclusive either.
 GERD_OUTCOMES <- list(
-  gerd        = list(col = "has_gerd",        labels = c("No GERD", "GERD")),
-  esophagitis = list(col = "has_esophagitis", labels = c("No oesophagitis", "Oesophagitis"))
+  gerd_no_eso = list(col = "has_gerd_no_eso",
+                     labels = c("No GERD", "GERD without oesophagitis")),
+  esophagitis = list(col = "has_esophagitis",
+                     labels = c("No oesophagitis", "Oesophagitis"))
 )
 
 SLEEP_EXPOSURES <- c(
@@ -189,6 +195,8 @@ GERD_LABELS <- c(
   smoking_binary            = "Smoking status",
   cci_cat                   = "Charlson Comorbidity Index Score",
   cci_score                 = "Charlson Comorbidity Index (continuous)",
+  has_gerd_no_eso           = "GERD without oesophagitis",
+  has_esophagitis           = "Oesophagitis",
   has_pud                   = "Peptic ulcer disease",
   has_ibs                   = "Irritable bowel syndrome",
   has_depression            = "Depression",
@@ -231,7 +239,7 @@ GERD_CCI_LABEL  <- if (GERD_CCI_COVARIATE == "cci_cat")
 # 2) Primary-outcome selection (paper-matching vs "ever")
 # ==============================================================================
 # Analysis files build BOTH definitions as *_ever and *_post_fitbit columns.
-# This sets has_gerd / has_esophagitis according to GERD_PRIMARY_DEF, and keeps
+# This sets has_gerd_no_eso / has_esophagitis according to GERD_PRIMARY_DEF, and keeps
 # the alternative available as *_sens for sensitivity analyses.
 apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
   stopifnot(primary %in% c("post_fitbit", "ever"))
@@ -247,7 +255,7 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
     }
     df
   }
-  df <- pick("has_gerd")
+  df <- pick("has_gerd_no_eso")
   df <- pick("has_esophagitis")
   message("Primary outcome definition: ", primary,
           if (primary == "post_fitbit")
@@ -261,33 +269,40 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
 # 2b) build_gerd_outcomes(): both phenotypes x both case definitions, from one pull
 # ==============================================================================
 # Returns one row per person with:
-#   has_gerd_ever / has_gerd_post_fitbit
+#   has_gerd_no_eso_ever / has_gerd_no_eso_post_fitbit
 #   has_esophagitis_ever / has_esophagitis_post_fitbit
 # "ever"        = >=2 qualifying condition records at any time
 # "post_fitbit" = >=2 records AND first record >= lag_days after the first Fitbit
 #                 record (the rule used by the published IBS paper)
 #
-# gerd_outcome_df : R9_gerd_outcome (the GERD-only pull; every row is a GERD record)
-# first_fitbit_df : one row per person with the anchoring first Fitbit date
-# fitbit_date_col : name of that date column (e.g. "first_fitbit_sleep_date")
-build_gerd_outcomes <- function(gerd_outcome_df, first_fitbit_df, fitbit_date_col,
+# Takes TWO separate pulls, one per phenotype. Each file is already restricted to
+# its own descendant-expanded concept set, so membership is determined purely by
+# which file a record came from -- no concept-ID re-filtering (which would drop
+# descendant-coded cases) and no concept-name matching.
+#
+#   gerd_no_eso_df  : R9_gerd_no_eso_outcome.rds   (seed 4144111)
+#   esophagitis_df  : R9_esophagitis_outcome.rds   (seed 30753)
+#   first_fitbit_df : one row per person with the anchoring first Fitbit date
+#   fitbit_date_col : name of that date column (e.g. "first_fitbit_sleep_date")
+build_gerd_outcomes <- function(gerd_no_eso_df, esophagitis_df,
+                                first_fitbit_df, fitbit_date_col,
                                 lag_days = GERD_POST_FITBIT_LAG_DAYS) {
   stopifnot(fitbit_date_col %in% names(first_fitbit_df))
-
-  base <- gerd_outcome_df %>%
-    dplyr::transmute(
-      person_id,
-      dx_date = as.Date(condition_start_datetime),
-      is_eso  = grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)
-    ) %>%
-    dplyr::filter(!is.na(dx_date))
 
   ff <- first_fitbit_df %>%
     dplyr::transmute(person_id, .ffd = as.Date(.data[[fitbit_date_col]])) %>%
     dplyr::filter(!is.na(.ffd)) %>%
     dplyr::distinct(person_id, .keep_all = TRUE)
 
+  prep <- function(df) {
+    if (is.null(df)) return(NULL)
+    df %>%
+      dplyr::transmute(person_id, dx_date = as.Date(condition_start_datetime)) %>%
+      dplyr::filter(!is.na(dx_date))
+  }
+
   mk <- function(d, nm_ever, nm_post) {
+    if (is.null(d) || nrow(d) == 0) return(NULL)
     ever <- d %>%
       dplyr::group_by(person_id) %>%
       dplyr::summarise(!!nm_ever := dplyr::n() >= 2, .groups = "drop")
@@ -301,16 +316,25 @@ build_gerd_outcomes <- function(gerd_outcome_df, first_fitbit_df, fitbit_date_co
     dplyr::full_join(ever, post, by = "person_id")
   }
 
-  g <- mk(base, "has_gerd_ever", "has_gerd_post_fitbit")
-  e <- mk(dplyr::filter(base, is_eso), "has_esophagitis_ever", "has_esophagitis_post_fitbit")
+  g <- mk(prep(gerd_no_eso_df), "has_gerd_no_eso_ever", "has_gerd_no_eso_post_fitbit")
+  e <- mk(prep(esophagitis_df), "has_esophagitis_ever", "has_esophagitis_post_fitbit")
 
-  out <- dplyr::full_join(g, e, by = "person_id") %>%
-    dplyr::mutate(dplyr::across(-person_id, ~tidyr::replace_na(.x, FALSE)))
+  out <- if (is.null(g)) e else if (is.null(e)) g else
+    dplyr::full_join(g, e, by = "person_id")
+  stopifnot(!is.null(out))
+  out <- out %>% dplyr::mutate(dplyr::across(-person_id, ~tidyr::replace_na(.x, FALSE)))
 
-  cat("build_gerd_outcomes(): GERD ever =", sum(out$has_gerd_ever),
-      "| GERD post-Fitbit =", sum(out$has_gerd_post_fitbit),
-      "| Oesophagitis ever =", sum(out$has_esophagitis_ever),
-      "| Oesophagitis post-Fitbit =", sum(out$has_esophagitis_post_fitbit), "\n")
+  # Guarantee both phenotype blocks exist even if one pull was unavailable.
+  for (v in c("has_gerd_no_eso_ever","has_gerd_no_eso_post_fitbit",
+              "has_esophagitis_ever","has_esophagitis_post_fitbit"))
+    if (!v %in% names(out)) { out[[v]] <- FALSE; message("  [note] ", v, " unavailable -> FALSE") }
+
+  cat("build_gerd_outcomes():",
+      "\n  GERD without oesophagitis  ever =", sum(out$has_gerd_no_eso_ever),
+      "| post-Fitbit =", sum(out$has_gerd_no_eso_post_fitbit),
+      "\n  Oesophagitis               ever =", sum(out$has_esophagitis_ever),
+      "| post-Fitbit =", sum(out$has_esophagitis_post_fitbit),
+      "\n  Carry BOTH (ever):", sum(out$has_gerd_no_eso_ever & out$has_esophagitis_ever), "\n")
   out
 }
 

@@ -2,8 +2,9 @@
 # Title: Sleep and GERD / Oesophagitis Analysis (All of Us R9)
 # Description: Retrospective cross-sectional analysis of Fitbit SLEEP metrics
 #              (exposure) and TWO acid-related outcomes:
-#                (1) has_gerd        - broad GERD
-#                (2) has_esophagitis - erosive / oesophagitis subset
+#                (1) has_gerd_no_eso - GERD without oesophagitis (seed 4144111)
+#                (2) has_esophagitis - oesophagitis                (seed 30753)
+#              These are PARALLEL phenotypes from two separate pulls, not nested.
 #
 #              Mirrors the published IBS sleep paper: the primary phenotype is
 #              >=2 condition records with the FIRST occurring >=180 days after the
@@ -16,7 +17,8 @@
 # HOW TO RUN (All of Us Workbench):
 #   1. Put this file, "GERD Analysis Helpers R9.R" and "GERD Data Prep R9.R" in
 #      the SAME working directory as your .rds files.
-#   2. Run "GERD Outcome Data Upload R9.R" first to create R9_gerd_outcome.rds.
+#   2. Run "GERD Outcome Data Upload R9.R" first -- it creates BOTH
+#      R9_gerd_no_eso_outcome.rds and R9_esophagitis_outcome.rds.
 #   3. Source or paste this whole file.
 #
 # Column names/types verified against the R9 schemas.
@@ -36,12 +38,13 @@ source("GERD Data Prep R9.R")          # schema-aware loading of covariates
 # ==============================================================================
 # 1) OUTCOME SOURCE (must exist -- created by "GERD Outcome Data Upload R9.R")
 # ==============================================================================
-R9_gerd_outcome <- read_first_existing("R9_gerd_outcome.rds", "GERD outcome pull",
-                                       required = TRUE)
-# Schema: person_id, condition_concept_id, standard_concept_name,
-#         standard_concept_code, condition_start_datetime (character), ...
-stopifnot(all(c("person_id","standard_concept_name","condition_start_datetime")
-              %in% names(R9_gerd_outcome)))
+# Two separate descendant-expanded pulls, one per phenotype.
+R9_gerd_no_eso_outcome <- read_first_existing("R9_gerd_no_eso_outcome.rds",
+                            "GERD-without-oesophagitis pull", required = TRUE)
+R9_esophagitis_outcome <- read_first_existing("R9_esophagitis_outcome.rds",
+                            "Oesophagitis pull", required = TRUE)
+for (.d in list(R9_gerd_no_eso_outcome, R9_esophagitis_outcome))
+  stopifnot(all(c("person_id","condition_start_datetime") %in% names(.d)))
 
 # ==============================================================================
 # 2) SLEEP EXPOSURES + first-Fitbit-sleep date
@@ -115,7 +118,8 @@ cat("First-Fitbit-sleep dates available for", nrow(first_fitbit_sleep_date_df), 
 # 3) OUTCOMES: both phenotypes x both case definitions
 # ==============================================================================
 R9_gerd_outcome_status <- build_gerd_outcomes(
-  R9_gerd_outcome, first_fitbit_sleep_date_df, "first_fitbit_sleep_date")
+  R9_gerd_no_eso_outcome, R9_esophagitis_outcome,
+  first_fitbit_sleep_date_df, "first_fitbit_sleep_date")
 saveRDS(R9_gerd_outcome_status, "R9_gerd_outcome_status_sleep.rds")
 
 # ==============================================================================
@@ -171,8 +175,8 @@ final_analysis_sleep_gerd_df <- valid_population_sleep %>%
   left_join(covars_df %>% select(-any_of(c("age_at_fitbit_start","age_cat"))),
             by = "person_id") %>%
   left_join(R9_gerd_outcome_status, by = "person_id") %>%
-  mutate(across(starts_with("has_gerd"),        ~replace_na(., FALSE)),
-         across(starts_with("has_esophagitis"), ~replace_na(., FALSE)))
+  mutate(across(starts_with("has_gerd_no_eso"), ~replace_na(., FALSE)),
+         across(starts_with("has_esophagitis"),  ~replace_na(., FALSE)))
 
 # Choose the primary case definition (GERD_PRIMARY_DEF in the helper).
 final_analysis_sleep_gerd_df <- apply_primary_outcome_def(final_analysis_sleep_gerd_df)
@@ -197,9 +201,12 @@ saveRDS(final_analysis_sleep_gerd_df, "R9_final_analysis_sleep_gerd_df.rds")
 cat("\n================ SLEEP COHORT SUMMARY ================\n")
 cat("N =", nrow(final_analysis_sleep_gerd_df),
     "| duplicate person_ids:", sum(duplicated(final_analysis_sleep_gerd_df$person_id)), "\n")
-cat("GERD cases (primary):        ", sum(final_analysis_sleep_gerd_df$has_gerd), "\n")
-cat("Oesophagitis cases (primary):", sum(final_analysis_sleep_gerd_df$has_esophagitis), "\n")
-cat("GERD cases (sensitivity):    ", sum(final_analysis_sleep_gerd_df$has_gerd_sens), "\n")
+cat("GERD without oesophagitis (primary):", sum(final_analysis_sleep_gerd_df$has_gerd_no_eso), "\n")
+cat("Oesophagitis (primary):             ", sum(final_analysis_sleep_gerd_df$has_esophagitis), "\n")
+cat("GERD without oesophagitis (sens):   ", sum(final_analysis_sleep_gerd_df$has_gerd_no_eso_sens), "\n")
+cat("Carry BOTH phenotypes (primary):    ",
+    sum(final_analysis_sleep_gerd_df$has_gerd_no_eso &
+        final_analysis_sleep_gerd_df$has_esophagitis), "\n")
 print(colMeans(is.na(final_analysis_sleep_gerd_df %>%
         select(any_of(c("median_bmi","smoking_binary","alcohol_likert_final",
                         "cci_score","education_collapsed","income_collapsed"))))))
@@ -217,7 +224,7 @@ sleep_results <- analyze_all_outcomes(
 )
 
 # Numbers for the manuscript's Results / diagnostics prose:
-str(sleep_results$gerd$diagnostics)
+str(sleep_results$gerd_no_eso$diagnostics)
 str(sleep_results$esophagitis$diagnostics)
 
 message("Sleep and GERD analysis complete. See ./manuscript_output/ (prefix 'sleep_').")
