@@ -22,11 +22,17 @@
 # -------------------------------------------------------------------------------
 
 suppressWarnings(suppressMessages({
-  req <- c("dplyr","tidyr","forcats","purrr","stringr","rlang","tibble",
-           "gtsummary","broom","MASS","car","pROC","ggplot2")
-  to_install <- setdiff(req, rownames(installed.packages()))
-  if (length(to_install)) install.packages(to_install, repos = "https://cloud.r-project.org/")
-  invisible(lapply(req, library, character.only = TRUE))
+  # Packages that must be INSTALLED. MASS/car/pROC are deliberately NOT attached:
+  # MASS::select() masks dplyr::select() and silently breaks every select() call
+  # downstream. They are referenced with :: instead.
+  .needed  <- c("dplyr","tidyr","forcats","purrr","stringr","rlang","tibble",
+                "gtsummary","broom","ggplot2","MASS","car","pROC")
+  .missing <- setdiff(.needed, rownames(installed.packages()))
+  if (length(.missing)) install.packages(.missing, repos = "https://cloud.r-project.org/")
+  # Attach only the tidyverse-style packages, dplyr LAST so its verbs win.
+  .attach <- c("tibble","rlang","stringr","purrr","forcats","tidyr","ggplot2",
+               "gtsummary","broom","dplyr")
+  invisible(lapply(.attach, library, character.only = TRUE))
 }))
 
 # Scalar-safe label fallback: returns `b` when the lookup missed. Defined early
@@ -354,72 +360,94 @@ label_quartiles_with_cutoffs <- function(df, exposures) {
 # ==============================================================================
 # 4) prep_modeling_df(): collapsed factor covariates + Q1-referenced quartiles
 # ==============================================================================
+# Defensive by design: each collapsed covariate is built only if it is not already
+# present and its source column exists. This lets the same function work whether the
+# frame came from the pre-built covariate files (which already supply
+# education_collapsed / income_collapsed) or from a raw derivation.
 prep_modeling_df <- function(df, exposures) {
-  present_expo <- intersect(exposures, names(df))
-  df %>%
-    mutate(
-      across(all_of(present_expo),
-             ~ forcats::fct_relevel(
-                 factor(as.integer(as.character(.x)), levels = 1:4, labels = paste0("Q", 1:4)),
-                 "Q1")),
-      cci_cat = factor(cci_cat, levels = c("0","1-2","1–2","3-4","3–4","5+")) %>%
-                forcats::fct_collapse("1-2" = c("1-2","1–2"), "3-4" = c("3-4","3–4")) %>%
-                forcats::fct_relevel("0"),
-      cci_score = as.numeric(cci_score),
-      race_collapsed = dplyr::case_when(
-        race == "White" ~ "White",
-        race == "Black or African American" ~ "Black",
-        race == "Asian" ~ "Asian",
-        race %in% c("American Indian or Alaska Native","Middle Eastern or North African",
-                    "Native Hawaiian or Other Pacific Islander","More than one population",
-                    "None of these") ~ "Other or Multiracial",
-        race %in% c("None Indicated","I prefer not to answer","PMI: Skip") ~ "Missing/Unknown",
-        TRUE ~ "Other or Multiracial"
-      ),
-      race_collapsed = factor(race_collapsed,
-                              levels = c("White","Black","Asian","Other or Multiracial","Missing/Unknown")),
-      ethnicity_collapsed = dplyr::case_when(
-        ethnicity == "Not Hispanic or Latino" ~ "Non-Hispanic",
-        ethnicity == "Hispanic or Latino" ~ "Hispanic",
-        TRUE ~ "Unknown/Missing"
-      ),
-      ethnicity_collapsed = factor(ethnicity_collapsed,
-                                   levels = c("Non-Hispanic","Hispanic","Unknown/Missing")),
-      sex_birth_collapsed = dplyr::case_when(
-        sex_at_birth %in% c("Female","Male") ~ sex_at_birth,
-        TRUE ~ "Other or Missing"
-      ),
-      sex_birth_collapsed = factor(sex_birth_collapsed),
-      education_collapsed = dplyr::case_when(
-        education_response %in% c("Advanced degree","College graduate") ~ "College or higher",
-        education_response == "Some college" ~ "Some college",
-        education_response %in% c("High school graduate","Grades 9-11","Grades 5-8",
+  d <- df
+  present_expo <- intersect(exposures, names(d))
+
+  # --- exposures -> Q1..Q4 factors with Q1 as reference -----------------------
+  if (length(present_expo))
+    d <- d %>% mutate(across(all_of(present_expo),
+      ~ forcats::fct_relevel(
+          factor(as.integer(as.character(.x)), levels = 1:4, labels = paste0("Q", 1:4)), "Q1")))
+
+  has <- function(v) v %in% names(d)
+
+  # --- Charlson ---------------------------------------------------------------
+  if (has("cci_score")) d$cci_score <- as.numeric(d$cci_score)
+  if (has("cci_cat")) {
+    # The source files label these with EN-dashes ("1–2"); normalise to plain
+    # hyphens so the level set is predictable regardless of which file supplied it.
+    .lv <- gsub("–", "-", as.character(d$cci_cat))
+    d$cci_cat <- factor(.lv, levels = c("0","1-2","3-4","5+"))
+  } else if (has("cci_score")) {
+    d$cci_cat <- factor(dplyr::case_when(d$cci_score == 0 ~ "0",
+                                         d$cci_score %in% 1:2 ~ "1-2",
+                                         d$cci_score %in% 3:4 ~ "3-4",
+                                         TRUE ~ "5+"),
+                        levels = c("0","1-2","3-4","5+"))
+  }
+
+  # --- demographics -----------------------------------------------------------
+  if (!has("race_collapsed") && has("race"))
+    d$race_collapsed <- factor(dplyr::case_when(
+      d$race == "White" ~ "White",
+      d$race == "Black or African American" ~ "Black",
+      d$race == "Asian" ~ "Asian",
+      d$race %in% c("None Indicated","I prefer not to answer","PMI: Skip") ~ "Missing/Unknown",
+      TRUE ~ "Other or Multiracial"),
+      levels = c("White","Black","Asian","Other or Multiracial","Missing/Unknown"))
+
+  if (!has("ethnicity_collapsed") && has("ethnicity"))
+    d$ethnicity_collapsed <- factor(dplyr::case_when(
+      d$ethnicity == "Not Hispanic or Latino" ~ "Non-Hispanic",
+      d$ethnicity == "Hispanic or Latino" ~ "Hispanic",
+      TRUE ~ "Unknown/Missing"),
+      levels = c("Non-Hispanic","Hispanic","Unknown/Missing"))
+
+  if (!has("sex_birth_collapsed") && has("sex_at_birth"))
+    d$sex_birth_collapsed <- factor(dplyr::case_when(
+      d$sex_at_birth %in% c("Female","Male") ~ d$sex_at_birth,
+      TRUE ~ "Other or Missing"))
+
+  # --- socio-economic (usually already mapped from concept IDs upstream) ------
+  if (!has("education_collapsed") && has("education_response"))
+    d$education_collapsed <- factor(dplyr::case_when(
+      d$education_response %in% c("Advanced degree","College graduate") ~ "College or higher",
+      d$education_response == "Some college" ~ "Some college",
+      d$education_response %in% c("High school graduate","Grades 9-11","Grades 5-8",
                                   "Grades 1-4","Never attended") ~ "High school or less",
-        TRUE ~ "Unknown/Missing"
-      ),
-      education_collapsed = factor(education_collapsed,
-                                   levels = c("High school or less","Some college","College or higher","Unknown/Missing")),
-      income_collapsed = dplyr::case_when(
-        income_response %in% c("<$10k","$10k–$25k","$25k–$35k","$35k–$50k") ~ "Less than $50k",
-        income_response %in% c("$50k–$75k","$75k–$100k","$100k–$150k") ~ "$50k to $150k",
-        income_response %in% c("$150k–$200k","$200k+") ~ "$150k or more",
-        TRUE ~ "Unknown/Missing"
-      ),
-      income_collapsed = factor(income_collapsed,
-                                levels = c("Less than $50k","$50k to $150k","$150k or more","Unknown/Missing")),
-      alcohol_likert_collapsed = dplyr::case_when(
-        alcohol_likert_final == 0 ~ "0 drinks per day",
-        alcohol_likert_final == 1 ~ "1-2 drinks per day",
-        alcohol_likert_final == 2 ~ "3-4 drinks per day",
-        alcohol_likert_final %in% c(3,4,5) ~ ">=5 drinks per day",
-        TRUE ~ NA_character_
-      ),
-      alcohol_likert_collapsed = factor(alcohol_likert_collapsed,
-                                        levels = c("0 drinks per day","1-2 drinks per day",
-                                                   "3-4 drinks per day",">=5 drinks per day")),
-      smoking_binary = factor(smoking_binary, levels = c(0,1), labels = c("Non-smoker","Smoker")),
-      age_cat = forcats::fct_relevel(factor(age_cat), "<30")
-    )
+      TRUE ~ "Unknown/Missing"),
+      levels = c("High school or less","Some college","College or higher","Unknown/Missing"))
+
+  if (!has("income_collapsed") && has("income_response"))
+    d$income_collapsed <- factor(dplyr::case_when(
+      d$income_response %in% c("<$10k","$10k–$25k","$25k–$35k","$35k–$50k") ~ "Less than $50k",
+      d$income_response %in% c("$50k–$75k","$75k–$100k","$100k–$150k") ~ "$50k to $150k",
+      d$income_response %in% c("$150k–$200k","$200k+") ~ "$150k or more",
+      TRUE ~ "Unknown/Missing"),
+      levels = c("Less than $50k","$50k to $150k","$150k or more","Unknown/Missing"))
+
+  # --- behavioral -------------------------------------------------------------
+  if (!has("alcohol_likert_collapsed") && has("alcohol_likert_final"))
+    d$alcohol_likert_collapsed <- factor(dplyr::case_when(
+      d$alcohol_likert_final == 0 ~ "0 drinks per day",
+      d$alcohol_likert_final == 1 ~ "1-2 drinks per day",
+      d$alcohol_likert_final == 2 ~ "3-4 drinks per day",
+      d$alcohol_likert_final %in% c(3,4,5) ~ ">=5 drinks per day",
+      TRUE ~ NA_character_),
+      levels = c("0 drinks per day","1-2 drinks per day","3-4 drinks per day",">=5 drinks per day"))
+
+  if (has("smoking_binary") && !is.factor(d$smoking_binary))
+    d$smoking_binary <- factor(d$smoking_binary, levels = c(0,1),
+                               labels = c("Non-smoker","Smoker"))
+
+  if (has("age_cat")) d$age_cat <- forcats::fct_relevel(factor(d$age_cat), "<30")
+
+  d
 }
 
 .factor_outcome <- function(df, outcome_col, labels) {
@@ -585,6 +613,43 @@ manuscript_supp_univariate <- function(df, outcome_col, outcome_labels, exposure
     footnote = paste0("N complete cases for this model: ", format(n, big.mark = ",")))
 }
 
+# --- Separation / sparsity guard ----------------------------------------------
+# Some covariates are very rare in this cohort (e.g. has_pud is recorded for only
+# ~137 participants), and the oesophagitis outcome is itself uncommon. A covariate
+# level with zero events produces an infinite, meaningless odds ratio and can make
+# the whole model unstable. This drops such covariates FROM THAT MODEL ONLY and
+# reports exactly what was dropped, rather than silently returning garbage.
+GERD_MIN_CELL <- 1   # drop a covariate if any outcome x level cell is < this
+
+drop_unstable_covariates <- function(d, outcome_col, covars, min_cell = GERD_MIN_CELL,
+                                     context = "") {
+  keep <- character(0); dropped <- character(0); why <- character(0)
+  y <- d[[outcome_col]]
+  for (v in covars) {
+    x <- d[[v]]
+    if (is.numeric(x)) {
+      if (all(is.na(x)) || stats::sd(x, na.rm = TRUE) == 0) {
+        dropped <- c(dropped, v); why <- c(why, "constant/all-missing")
+      } else keep <- c(keep, v)
+      next
+    }
+    xf <- droplevels(as.factor(x))
+    if (nlevels(xf) < 2) {
+      dropped <- c(dropped, v); why <- c(why, "single level"); next
+    }
+    tab <- table(xf, y)
+    if (min(tab) < min_cell) {
+      dropped <- c(dropped, v)
+      why <- c(why, paste0("empty cell (min=", min(tab), ")"))
+    } else keep <- c(keep, v)
+  }
+  if (length(dropped)) {
+    message("   [sparsity guard] ", context, " dropped ", length(dropped), " covariate(s): ",
+            paste(sprintf("%s (%s)", dropped, why), collapse = "; "))
+  }
+  list(keep = keep, dropped = dropped, why = why)
+}
+
 run_models_for_outcome <- function(df, outcome_col, outcome_labels, exposures,
                                    covars = GERD_ADJ_COVARS, cci_label = GERD_CCI_LABEL,
                                    caption_prefix = NULL) {
@@ -598,7 +663,14 @@ run_models_for_outcome <- function(df, outcome_col, outcome_labels, exposures,
     d <- d0 %>% dplyr::select(dplyr::all_of(keep)) %>% tidyr::drop_na()
     stopifnot(nrow(d) > 0)
 
-    rhs <- paste(c(exposure, covars), collapse = " + ")
+    # Guard against separation from ultra-rare covariates before fitting.
+    guard <- drop_unstable_covariates(d, outcome_col, covars,
+                                      context = paste0(outcome_col, " ~ ", exposure, ":"))
+    covars_use <- guard$keep
+    if (length(guard$dropped))
+      d <- d %>% dplyr::select(dplyr::all_of(unique(c(outcome_col, exposure, covars_use))))
+
+    rhs <- paste(c(exposure, covars_use), collapse = " + ")
     f_full <- stats::as.formula(paste0(outcome_col, " ~ ", rhs))
     m_full <- stats::glm(f_full, data = d, family = stats::binomial())
 
@@ -640,7 +712,8 @@ run_models_for_outcome <- function(df, outcome_col, outcome_labels, exposures,
 
     list(exposure = exposure, n = nrow(d), full = m_full, step = m_step,
          vif_full = vif_full, auc_full = auc_full, auc_step = auc_step,
-         cooks_max = cooks_max, tbl = tbl_compare, exposure_quick = quick)
+         cooks_max = cooks_max, tbl = tbl_compare, exposure_quick = quick,
+         covars_used = covars_use, covars_dropped = guard$dropped)
   }
 
   results <- purrr::map(present_expo, fit_one)
