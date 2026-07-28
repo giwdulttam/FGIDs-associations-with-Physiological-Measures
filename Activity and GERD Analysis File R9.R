@@ -25,8 +25,11 @@ suppressWarnings(suppressMessages({
   }
 }))
 
-source("GERD Analysis Helpers R9.R")
-source("GERD Data Prep R9.R")
+# Locate the two shared files. GERD_CODE_DIR lets the .R files live somewhere
+# other than the data folder (RUN_GERD_ANALYSIS.R sets it); defaults to ".".
+if (!exists("GERD_CODE_DIR")) GERD_CODE_DIR <- "."
+source(file.path(GERD_CODE_DIR, "GERD Analysis Helpers R9.R"))
+source(file.path(GERD_CODE_DIR, "GERD Data Prep R9.R"))
 
 # ==============================================================================
 # 1) OUTCOME SOURCE
