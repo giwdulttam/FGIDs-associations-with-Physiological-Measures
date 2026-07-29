@@ -17,7 +17,7 @@
 # -------------------------------------------------------------------------------
 
 suppressWarnings(suppressMessages({
-  for (p in c("dplyr","tidyr","purrr","rlang","tibble","lubridate")) library(p, character.only = TRUE)
+  for (p in c("dplyr","tidyr","purrr","rlang","tibble","lubridate","readr")) library(p, character.only = TRUE)
 }))
 
 # ==============================================================================
@@ -112,15 +112,68 @@ gerd_fix_aou_env <- function(verbose = TRUE) {
 # NOTE: this is a LOCAL approximation -- it cannot perform the Cohort Builder
 # descendant expansion, so it matches on the seed concept ids plus concept-name
 # patterns. The BigQuery pull remains the rigorous definition.
+# Find the best available source of GERD/oesophagitis condition records among ALL
+# condition-style files in the data folder(s), plus any Cohort Builder CSV export.
+# Returns a single condition-format data frame, or NULL.
+gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = 4144111,
+                                       eso_ids = 30753, max_mb = 120, verbose = TRUE) {
+  data_dirs <- unique(data_dirs[nzchar(data_dirs) & dir.exists(data_dirs)])
+  if (!length(data_dirs)) return(NULL)
+
+  ## (a) a Cohort Builder CSV/CSV.GZ export, if one is present
+  csvs <- unlist(lapply(data_dirs, function(d)
+    list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)))
+  for (p in csvs) {
+    d <- tryCatch(suppressWarnings(readr::read_csv(p, show_col_types = FALSE,
+                                                   progress = FALSE, n_max = 5)),
+                  error = function(e) NULL)
+    if (!is.null(d) && "condition_concept_id" %in% names(d)) {
+      if (verbose) cat("  [source] Cohort Builder CSV export: ", basename(p), "\n", sep = "")
+      return(suppressWarnings(readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
+    }
+  }
+
+  ## (b) otherwise scan condition-style .rds files, smallest first
+  files <- unlist(lapply(data_dirs, function(d)
+    list.files(d, pattern = "\\.rds$", full.names = TRUE)))
+  info <- file.info(files)
+  files <- files[!is.na(info$size) & info$size / 1024^2 <= max_mb]
+  files <- files[order(file.info(files)$size)]
+
+  best <- NULL; best_n <- 0; best_nm <- ""
+  for (f in files) {
+    d <- tryCatch(readRDS(f), error = function(e) NULL)
+    if (is.null(d) || !is.data.frame(d) || !"condition_concept_id" %in% names(d)) {
+      rm(d); next
+    }
+    n <- sum(d$condition_concept_id %in% c(gerd_ids, eso_ids), na.rm = TRUE)
+    if (n == 0 && "standard_concept_name" %in% names(d))
+      n <- sum(grepl("reflux|esophagitis|oesophagitis", d$standard_concept_name,
+                     ignore.case = TRUE), na.rm = TRUE)
+    if (n > best_n) { best <- d; best_n <- n; best_nm <- basename(f) }
+    else rm(d)
+    invisible(gc(verbose = FALSE))
+  }
+  if (!is.null(best) && verbose)
+    cat("  [source] ", best_nm, " (", best_n, " matching records)\n", sep = "")
+  best
+}
+
 gerd_outcomes_from_condition_df <- function(data_dir = ".",
                                             gerd_ids = 4144111, eso_ids = 30753,
                                             gerd_pattern = "reflux",
                                             eso_pattern  = "esophagitis|oesophagitis",
-                                            write = TRUE, verbose = TRUE) {
-  f <- file.path(data_dir, "R9_condition_df.rds")
-  if (!file.exists(f)) return(NULL)
-  if (verbose) cat("  Scanning R9_condition_df.rds for reflux / oesophagitis records...\n")
-  cond <- readRDS(f)
+                                            write = TRUE, verbose = TRUE,
+                                            extra_dirs = character(0)) {
+  if (verbose) cat("  Searching your files for reflux / oesophagitis records...\n")
+  dirs <- unique(c(data_dir, extra_dirs,
+                   dirname(normalizePath(data_dir, mustWork = FALSE)),
+                   path.expand("~/workspace/Dataset")))
+  cond <- gerd_find_condition_source(dirs, gerd_ids, eso_ids, verbose = verbose)
+  if (is.null(cond)) {
+    if (verbose) cat("   no condition-style file contained matching records.\n")
+    return(NULL)
+  }
   nm <- if ("standard_concept_name" %in% names(cond)) cond$standard_concept_name else ""
   nm_lc <- tolower(nm)
 
@@ -137,8 +190,25 @@ gerd_outcomes_from_condition_df <- function(data_dir = ".",
   nm_eso  <- grepl(eso_pattern, nm_lc) & !says_without
   nm_gerd <- grepl(gerd_pattern, nm_lc) & !nm_eso
 
-  is_eso  <- id_eso | (!id_gerd & nm_eso)
-  is_gerd <- (id_gerd | nm_gerd) & !is_eso
+  # Exact concept-id matches take priority. Name matching is only used to pick up
+  # DESCENDANT concepts (which carry different ids and cannot be expanded locally),
+  # and only when it does not contradict an exact id match. The breakdown is
+  # printed so the captured set is auditable rather than implicit.
+  has_exact <- any(id_gerd) || any(id_eso)
+  if (identical(getOption("gerd.local_match", "id_then_name"), "id_only") && has_exact) {
+    is_eso  <- id_eso
+    is_gerd <- id_gerd
+  } else {
+    is_eso  <- id_eso | (!id_gerd & nm_eso)
+    is_gerd <- (id_gerd | nm_gerd) & !is_eso
+  }
+  if (verbose) {
+    cat("   matched by concept id : GERD ", sum(id_gerd), " | oesophagitis ", sum(id_eso), "\n", sep = "")
+    cat("   added by concept name : GERD ", sum(is_gerd & !id_gerd),
+        " | oesophagitis ", sum(is_eso & !id_eso), "\n", sep = "")
+    if (!has_exact)
+      cat("   NOTE: no exact seed-id matches; classification is name-based only.\n")
+  }
 
   if (!any(is_eso) && !any(is_gerd)) {
     if (verbose) cat("   no matching records found in R9_condition_df.\n")
@@ -195,23 +265,49 @@ gerd_ensure_outcome_files <- function(data_dir = ".", code_dir = ".",
     return("local")
   }
 
-  if (!allow_bigquery) stop("Outcome files missing and local build failed.", call. = FALSE)
+  .cb_help <- paste0(
+    "\n-------------------------------------------------------------------\n",
+    "WHAT TO DO NEXT\n",
+    "-------------------------------------------------------------------\n",
+    "No GERD / oesophagitis records were found in any of your .rds files, so\n",
+    "the outcome must come from a Cohort Builder export.\n\n",
+    "In the All of Us Workbench website (not RStudio):\n",
+    "  1. Data > Datasets > + New Dataset\n",
+    "  2. Cohort  : your Fitbit + EHR cohort\n",
+    "  3. Concept Sets > + Concept Set > Conditions, and add BOTH:\n",
+    "       4144111  Gastroesophageal reflux disease without oesophagitis\n",
+    "       30753    Oesophagitis\n",
+    "     (tick 'include descendants')\n",
+    "  4. Values   : select ALL columns for the Condition domain\n",
+    "  5. Save, then Analyze > Export to CSV\n",
+    "  6. The CSV lands in your workspace bucket / Dataset folder. Move or copy\n",
+    "     it next to your .rds files, then re-run this script -- it detects the\n",
+    "     CSV automatically.\n\n",
+    "Full instructions: HOW_TO_RUN_GERD_ANALYSIS.md, section 3.\n",
+    "-------------------------------------------------------------------\n")
 
-  cat("  Falling back to the BigQuery pull.\n")
+  if (!allow_bigquery) stop("Outcome files missing and local build failed.", .cb_help, call. = FALSE)
+
+  cat("  No local source found. Trying the BigQuery pull as a last resort.\n")
   ok <- gerd_fix_aou_env()
   if (!ok)
     stop("Cannot run the BigQuery pull: the All of Us environment variables are not set ",
-         "and could not be recovered.\nSet them by hand, e.g.\n",
-         '  Sys.setenv(WORKSPACE_BUCKET = "gs://fc-secure-XXXX")\n',
-         '  Sys.setenv(OWNER_EMAIL = "you@researchallofus.org")\n',
-         '  Sys.setenv(GOOGLE_PROJECT = "aou-rw-XXXX")\n', call. = FALSE)
+         "and could not be recovered.", .cb_help, call. = FALSE)
 
   up <- file.path(code_dir, "GERD Outcome Data Upload R9.R")
   if (!file.exists(up)) stop("Cannot find: ", up, call. = FALSE)
   old <- getwd(); on.exit(setwd(old), add = TRUE); setwd(data_dir)
-  source(up)
-  if (!file.exists(f1) || !file.exists(f2))
-    stop("The BigQuery pull finished but the outcome files were not created.", call. = FALSE)
+
+  bq <- tryCatch({ source(up); TRUE }, error = function(e) {
+    msg <- conditionMessage(e)
+    if (grepl("VPC Service Controls|policyViolation", msg)) {
+      message("\n*** BigQuery is blocked in this workspace by VPC Service Controls. ***\n",
+              "This is an organisational policy, not something the code can work around.")
+    } else message("\n*** BigQuery pull failed: ", msg)
+    FALSE
+  })
+  if (!bq || !file.exists(f1) || !file.exists(f2))
+    stop("Could not obtain the outcome data.", .cb_help, call. = FALSE)
   "bigquery"
 }
 

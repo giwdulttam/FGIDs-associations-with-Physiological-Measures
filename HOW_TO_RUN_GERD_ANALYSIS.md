@@ -1,70 +1,133 @@
 # How to Run the GERD Analysis
 
-Three steps. Copy, paste, done.
+Start here after restarting your R session.
 
 ---
 
-## Step 1 — Get the code
+# Step 1 — Get the code
 
-Open the **Terminal** tab in RStudio and paste this:
+**Terminal** tab:
 
 ```bash
-cd ~/workspace && rm -rf gerd_code && git clone https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures.git gerd_code
+cd ~/workspace
+```
+
+```bash
+rm -rf gerd_code
+```
+
+```bash
+git clone https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures.git gerd_code
 ```
 
 ---
 
-## Step 2 — Run it
+# Step 2 — Find out where your GERD data is
 
-Go back to the **Console** tab and paste this one line:
+**Console** tab:
+
+```r
+source("~/workspace/gerd_code/GERD_FIND_OUTCOME_DATA.R")
+```
+
+This is read-only, takes about a minute, and needs no BigQuery. It scans every
+condition-style `.rds` file you have and reports whether the GERD (`4144111`) and
+oesophagitis (`30753`) records are already somewhere in your data.
+
+It ends with one of two messages:
+
+### ✅ "found candidate source(s)"
+
+You already have the data. **Skip to Step 4.**
+
+### ❌ "no GERD or oesophagitis records found"
+
+You need a Cohort Builder export. **Do Step 3.**
+
+> Either way, paste the output back to me if you're unsure — it prints the exact
+> concepts it found.
+
+---
+
+# Step 3 — Only if Step 2 found nothing: make a Cohort Builder export
+
+**Your BigQuery access is blocked.** Your console showed:
+
+```
+VPC Service Controls: Request is prohibited by organization's policy. [policyViolation]
+```
+
+That is an organisational restriction on this cloned workspace — it blocked both
+the Cloud Storage export *and* the direct-download version. No code change gets
+around it, so the outcome data has to come from the Cohort Builder UI instead.
+
+### On the Workbench **website** (not RStudio)
+
+1. **Data** → **Datasets** → **+ New Dataset**
+2. **Cohort**: choose your Fitbit + EHR cohort (the one you already made)
+3. **Concept Sets** → **+ Concept Set** → **Conditions**, and add **both**:
+
+   | Concept ID | Name |
+   |---|---|
+   | `4144111` | Gastroesophageal reflux disease without oesophagitis |
+   | `30753` | Oesophagitis |
+
+   Tick **include descendants** for each.
+4. **Values**: select **all** columns for the Condition domain
+   (you need at least `person_id`, `condition_concept_id`, `standard_concept_name`,
+   `condition_start_datetime`)
+5. **Save**, then **Analyze** → **Export to CSV**
+6. Note where the CSV lands (your workspace bucket / the `Dataset` folder)
+
+### Then bring the CSV next to your data
+
+```r
+DATA <- path.expand("~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup")
+file.copy(list.files("~/workspace/Dataset", pattern = "condition.*\\.csv(\\.gz)?$", full.names = TRUE), DATA)
+list.files(DATA, pattern = "\\.csv(\\.gz)?$")
+```
+
+The analysis detects the CSV automatically — no path to configure.
+
+> ⚠️ **A note on the person-only export.** The CSV your collaborator made
+> (`..._data_person-000000000000.csv.gz`) contains demographics only — date of
+> birth, race, ethnicity, sex. It has no condition records, so it cannot supply
+> the outcome. The export above must include the **Condition** domain with those
+> two concept sets.
+
+---
+
+# Step 4 — Run the whole analysis
 
 ```r
 source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 ```
 
-That's it. Nothing to edit, no paths to set.
+One line. Nothing to edit. **10–30 minutes.**
 
-It takes **10–30 minutes**. You'll see progress as it goes.
+It finds your data, fixes the locale, builds the outcome files from whatever
+source is available, and runs all three analyses.
 
 ---
 
-## Step 3 — Get your results
-
-When it finishes it prints where your files are. To list them:
+# Step 5 — Get your results
 
 ```r
 list.files(file.path(GERD_DATA_DIR, "manuscript_output"))
 ```
 
-To open one:
-
 ```r
 read.csv(file.path(GERD_DATA_DIR, "manuscript_output", "sleep_gerd_no_eso_table1.csv"), check.names = FALSE)
 ```
 
-To download: **Files** pane → `rds_backup` → `manuscript_output` → tick the files → **More** → **Export**.
+Download: **Files** pane → `rds_backup` → `manuscript_output` → tick → **More** → **Export**.
 
 ---
 ---
 
-# What it does automatically
+# What you get
 
-You do not need to do any of this yourself — it is listed so you know what happened.
-
-| It handles | How |
-|---|---|
-| Finding your datasets | Looks in your `rds_backup` folder; if not there, searches your home directory |
-| Finding the code | Looks in `~/workspace/gerd_code` |
-| The UTF-8 locale warning | Sets a UTF-8 locale so the accented factor labels match |
-| Missing All of Us environment variables | Recovers `WORKSPACE_BUCKET`, `OWNER_EMAIL` and `GOOGLE_PROJECT` from `gcloud`/`gsutil` — this is what caused your earlier `[notFound]` error |
-| Creating the outcome data | Builds it from `R9_condition_df` if the records are there (no BigQuery), otherwise runs the BigQuery pull |
-| Running the analyses | Sleep, activity, and combined — each with its own error handling, so one failure will not stop the others |
-
----
-
-# Your results
-
-You get **six sets** of files — 2 outcomes × 3 exposure sets:
+Six sets of files — 2 outcomes × 3 exposure sets:
 
 | Prefix | Analysis |
 |---|---|
@@ -80,27 +143,41 @@ Each set contains:
 | File | What it is |
 |---|---|
 | `*_table1.csv` | **Table 1** — demographics |
-| `*_table2.csv` | **Table 2** — sleep/activity metrics with quartile cutoffs |
-| `*_supp_table1_univariate.csv` | **Supplement Table 1** — unadjusted odds ratios |
-| `*_supp_table2_multivariable.csv` | **Supplement Table 2** — adjusted odds ratios |
+| `*_table2.csv` | **Table 2** — metrics with quartile cutoffs |
+| `*_supp_table1_univariate.csv` | **Supplement Table 1** — unadjusted ORs |
+| `*_supp_table2_multivariable.csv` | **Supplement Table 2** — adjusted ORs |
 | `*_figure1_forest.png` | **Figure 1** — forest plots |
 | `*_figure2_gvif.png` | **Figure 2** — multicollinearity chart |
-| `*_diagnostics.csv` | Numbers for the Results paragraph on model assumptions |
+| `*_diagnostics.csv` | Numbers for the model-assumptions paragraph |
 | `*_quartile_cutoffs.csv` | Exact quartile boundaries for the Table 2 footnote |
 
 ---
 
-# Three lines worth reading in the output
+# Lines worth reading in the output
 
-**1. Your cohort size**
+**Where the outcome came from**
+
+```
+route: existing | local | bigquery
+[source] <filename> (N matching records)
+matched by concept id : GERD ... | oesophagitis ...
+added by concept name : GERD ... | oesophagitis ...
+```
+
+`local` means it built the outcome from your existing files. The two "matched /
+added" lines show exactly how each record was classified — concept-ID matches are
+exact; name matches are descendants that can't be expanded outside the Cohort
+Builder. If "added by concept name" is large, check the printed concept list.
+
+**Your cohort size**
 
 ```
 Eligible sleep cohort N = 19995
 ```
 
-This should match your published IBS paper. If it is different, a different `valid_population_sleep.rds` was picked up.
+Should match your published IBS paper.
 
-**2. Your case counts**
+**Your case counts**
 
 ```
 build_gerd_outcomes():
@@ -109,15 +186,17 @@ build_gerd_outcomes():
   Carry BOTH (ever): ...
 ```
 
-If a post-Fitbit count is very small, the analysis may be underpowered — tell me and we can switch the primary definition to "ever".
+If a post-Fitbit count is very small, tell me — we may want the "ever" rule instead.
 
-**3. Any dropped covariates**
+**Skipped outcomes / dropped covariates**
 
 ```
+### SKIPPING OUTCOME: ... only N case(s)
 [sparsity guard] ... dropped N covariate(s)
 ```
 
-This means a covariate had no cases in one group, so it was removed **from that one model** to avoid a meaningless odds ratio. Expect it on the oesophagitis models. **If you see it, mention it in the manuscript methods.**
+Both are expected on rare outcomes and are reported deliberately. If the sparsity
+guard fires on a primary model, mention it in the manuscript methods.
 
 ---
 
@@ -125,23 +204,24 @@ This means a covariate had no cases in one group, so it was removed **from that 
 
 | Message | What to do |
 |---|---|
-| `Could not find your .rds datasets` | Open `RUN_GERD_ANALYSIS.R`, put your data folder path in `GERD_DATA_DIR` at the top, save, re-run Step 2. |
-| `Could not find the GERD .R scripts` | Step 1 did not finish. Re-run it and check for errors in the Terminal. |
-| `the All of Us environment variables are not set` | Only happens if `gcloud` is unavailable. Run `Sys.setenv(WORKSPACE_BUCKET="gs://...", OWNER_EMAIL="you@...", GOOGLE_PROJECT="aou-rw-...")` then re-run Step 2. |
-| One analysis says `FAILED` | The others still ran. Send me the error text above the summary. |
-| Session runs out of memory | Edit `GERD_RUN` near the top of the runner to one at a time, e.g. `GERD_RUN <- c("sleep")`, restarting R between runs. |
+| `VPC Service Controls ... policyViolation` | BigQuery is blocked. Use Step 3. |
+| `Could not obtain the outcome data` | Step 2 found nothing → do Step 3. The error prints the Cohort Builder instructions. |
+| `Could not find your .rds datasets` | Open `RUN_GERD_ANALYSIS.R`, set `GERD_DATA_DIR` at the top. |
+| `Could not find the GERD .R scripts` | Step 1 didn't finish — re-run it. |
+| `cannot open file 'R9_person_df.rds'` | You ran an analysis file directly. Use `RUN_GERD_ANALYSIS.R`. |
+| `Character set is not UTF-8` | Harmless — the runner sets a UTF-8 locale itself. |
+| One analysis says `FAILED` | The others still ran. Send me the error above the summary. |
+| Out of memory | Edit `GERD_RUN` near the top of the runner to one at a time. |
 
 ---
 
 # To re-run later
 
-Everything after the first run is cached, so it is just Step 2 again:
-
 ```r
 source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 ```
 
-To pull the newest code first:
+To get the newest code first:
 
 ```bash
 cd ~/workspace/gerd_code && git pull
@@ -149,9 +229,13 @@ cd ~/workspace/gerd_code && git pull
 
 ---
 
-# Two things to confirm before publishing
+# Before publishing
 
-1. **Verify the concept IDs** `4144111` (GERD without oesophagitis) and `30753` (oesophagitis) in the Cohort Builder.
-2. **Check the oesophagitis scope.** The descendants of `30753` may include non-reflux causes — eosinophilic, infectious, pill-induced, radiation. As written the outcome is "oesophagitis", not "reflux oesophagitis". If you want reflux only, narrow `ESOPHAGITIS_SEEDS` at the top of `GERD Outcome Data Upload R9.R`.
-
-If the run used the local route (it will say so), the outcome data came from `R9_condition_df` by concept-ID and name matching rather than the Cohort Builder's full descendant expansion. That is fine for getting results now, but run `GERD Outcome Data Upload R9.R` once for the definitive concept set before you publish.
+1. **Verify the concept IDs** `4144111` and `30753` in the Cohort Builder.
+2. **Check the oesophagitis scope.** Descendants of `30753` may include non-reflux
+   causes — eosinophilic, infectious, pill-induced, radiation. As written the
+   outcome is "oesophagitis", not "reflux oesophagitis".
+3. **If the run used `route: local`**, the outcome came from concept-ID and name
+   matching over your existing files rather than a true Cohort Builder descendant
+   expansion. Check the printed concept list, and prefer a proper export (Step 3)
+   for the final numbers.

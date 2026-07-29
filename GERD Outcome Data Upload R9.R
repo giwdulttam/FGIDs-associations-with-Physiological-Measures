@@ -34,8 +34,12 @@
 #     ESOPHAGITIS_SEEDS below.
 # -------------------------------------------------------------------------------
 
-# Force this notebook to use the v9 Controlled Tier CDR
-Sys.setenv(WORKSPACE_CDR = "fc-aou-cdr-prod-ct.C2024Q3R9")
+# CDR to query. Do NOT blindly overwrite an existing value: cloned / migrated
+# workspaces sit on a different CDR (e.g. wb-<name>.C2025Q4R6), and forcing the
+# old one produces a [notFound] job failure. Only set a default when empty.
+if (!nzchar(Sys.getenv("WORKSPACE_CDR")))
+  Sys.setenv(WORKSPACE_CDR = "fc-aou-cdr-prod-ct.C2024Q3R9")
+message("Using WORKSPACE_CDR = ", Sys.getenv("WORKSPACE_CDR"))
 
 library(tidyverse)
 library(bigrquery)
