@@ -60,6 +60,10 @@ drop_big <- function(...) {
 # ==============================================================================
 # 0b) All of Us environment repair + outcome-file bootstrapping
 # ==============================================================================
+# Minimum participants required before a locally-assembled outcome is accepted
+# when there are no exact seed-concept matches. Below this it is incidental noise
+# from another study's concept set, not a phenotype.
+GERD_MIN_LOCAL_PARTICIPANTS <- 50
 # The Workbench normally sets WORKSPACE_BUCKET / OWNER_EMAIL / GOOGLE_PROJECT.
 # When an R session starts before that happens they come back empty, and any
 # BigQuery export silently builds a broken path like "/bq_exports//..." and then
@@ -148,8 +152,8 @@ gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = 4144111,
     }
     n <- sum(d$condition_concept_id %in% c(gerd_ids, eso_ids), na.rm = TRUE)
     if (n == 0 && "standard_concept_name" %in% names(d))
-      n <- sum(grepl("reflux|esophagitis|oesophagitis", d$standard_concept_name,
-                     ignore.case = TRUE), na.rm = TRUE)
+      n <- sum(grepl("esophagitis|oesophagitis|gastro-?o?esophageal reflux|reflux disease|\\bgerd\\b",
+                     d$standard_concept_name, ignore.case = TRUE), na.rm = TRUE)
     if (n > best_n) { best <- d; best_n <- n; best_nm <- basename(f) }
     else rm(d)
     invisible(gc(verbose = FALSE))
@@ -161,7 +165,7 @@ gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = 4144111,
 
 gerd_outcomes_from_condition_df <- function(data_dir = ".",
                                             gerd_ids = 4144111, eso_ids = 30753,
-                                            gerd_pattern = "reflux",
+                                            gerd_pattern = "gastro-?o?esophageal reflux|gastro-?esophageal reflux|\\bgerd\\b|reflux disease",
                                             eso_pattern  = "esophagitis|oesophagitis",
                                             write = TRUE, verbose = TRUE,
                                             extra_dirs = character(0)) {
@@ -235,6 +239,29 @@ gerd_outcomes_from_condition_df <- function(data_dir = ".",
     print(utils::head(dplyr::count(dplyr::bind_rows(g, e), condition_concept_id,
                                    standard_concept_name, sort = TRUE), 25))
   }
+  # ---------------------------------------------------------------------------
+  # VIABILITY GATE
+  # ---------------------------------------------------------------------------
+  # A handful of records is NOT a phenotype. Concept sets pulled for other studies
+  # (peptic ulcer, functional dyspepsia) incidentally contain a few GERD-adjacent
+  # concepts -- e.g. "Erosive esophagitis", "GERD with ulceration" -- typically
+  # only a few rows. Building an outcome from those would yield an analysis with a
+  # handful of cases that looks real but is meaningless. Refuse unless there are
+  # either exact seed-id matches or a credible number of participants.
+  n_pg <- dplyr::n_distinct(g$person_id); n_pe <- dplyr::n_distinct(e$person_id)
+  viable <- has_exact || max(n_pg, n_pe) >= GERD_MIN_LOCAL_PARTICIPANTS
+  if (!viable) {
+    if (verbose) {
+      cat("\n   *** NOT USABLE ***\n")
+      cat("   No exact matches for concept ", paste(c(gerd_ids, eso_ids), collapse = " or "),
+          ", and only ", n_pg, " / ", n_pe, " participants matched by name\n", sep = "")
+      cat("   (threshold is ", GERD_MIN_LOCAL_PARTICIPANTS, " participants).\n", sep = "")
+      cat("   These are incidental concepts carried in by other studies' concept\n")
+      cat("   sets, not a GERD phenotype. A Cohort Builder export is required.\n")
+    }
+    return(NULL)
+  }
+
   if (write) {
     saveRDS(g, file.path(data_dir, "R9_gerd_no_eso_outcome.rds"))
     saveRDS(e, file.path(data_dir, "R9_esophagitis_outcome.rds"))
