@@ -174,18 +174,57 @@ gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = GERD_ALL_SEED
   if (!length(data_dirs)) return(NULL)
 
   ## (a) a Cohort Builder CSV/CSV.GZ export, if one is present
+  # Check EVERY condition CSV and keep the one with the most GERD/oesophagitis
+  # records -- do not just take the first file with a condition_concept_id
+  # column. A workspace normally accumulates exports from other studies (the
+  # peptic-ulcer and functional-dyspepsia pulls both produce condition CSVs), and
+  # taking the first one found meant a foreign export could shadow a good one.
   if ("csv" %in% sources) {
     csvs <- unlist(lapply(data_dirs, function(d)
       list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)))
-    for (p in csvs) {
-      d <- tryCatch(suppressWarnings(readr::read_csv(p, show_col_types = FALSE,
-                                                     progress = FALSE, n_max = 5)),
-                    error = function(e) NULL)
-      if (!is.null(d) && "condition_concept_id" %in% names(d)) {
-        if (verbose) cat("  [source] Cohort Builder CSV export: ", basename(p), "\n", sep = "")
-        return(suppressWarnings(readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
-      }
+    csvs <- unique(csvs)
+    # Count matches by reading only the two columns needed; the winner is then
+    # re-read in full. These exports run to millions of rows, so scanning every
+    # one of them completely just to pick between them is not worth it.
+    .count_csv <- function(p) {
+      d <- tryCatch(suppressWarnings(readr::read_csv(
+             p, show_col_types = FALSE, progress = FALSE,
+             col_select = dplyr::any_of(c("condition_concept_id",
+                                          "standard_concept_name")))),
+             error = function(e) NULL)
+      if (is.null(d)) d <- tryCatch(suppressWarnings(   # readr < 2.0 has no col_select
+             readr::read_csv(p, show_col_types = FALSE, progress = FALSE)),
+             error = function(e) NULL)
+      if (is.null(d) || !"condition_concept_id" %in% names(d)) return(NA_integer_)
+      n <- sum(d$condition_concept_id %in% c(gerd_ids, eso_ids), na.rm = TRUE)
+      if (n == 0 && "standard_concept_name" %in% names(d))
+        n <- sum(grepl("esophagitis|oesophagitis|gastro-?o?esophageal reflux|reflux disease|\\bgerd\\b",
+                       d$standard_concept_name, ignore.case = TRUE), na.rm = TRUE)
+      n
     }
+    best_csv_n <- -1; best_csv_p <- ""; any_condition_csv <- FALSE
+    for (p in csvs) {
+      hdr <- tryCatch(suppressWarnings(readr::read_csv(p, show_col_types = FALSE,
+                                                       progress = FALSE, n_max = 5)),
+                      error = function(e) NULL)
+      if (is.null(hdr) || !"condition_concept_id" %in% names(hdr)) next
+      any_condition_csv <- TRUE
+      n <- .count_csv(p)
+      if (is.na(n)) next
+      if (verbose) cat("   [csv] ", basename(p), ": ", n, " matching record(s)\n", sep = "")
+      if (n > best_csv_n) { best_csv_n <- n; best_csv_p <- p }
+    }
+    # A condition CSV with zero matches is the WRONG export -- another study's.
+    # Fall through to the remaining routes instead of returning an empty frame.
+    if (nzchar(best_csv_p) && best_csv_n > 0) {
+      if (verbose) cat("  [source] Cohort Builder CSV export: ", basename(best_csv_p),
+                       " (", best_csv_n, " matching records)\n", sep = "")
+      return(suppressWarnings(readr::read_csv(best_csv_p, show_col_types = FALSE,
+                                              progress = FALSE)))
+    }
+    if (any_condition_csv && verbose)
+      cat("   none of the condition CSVs contain GERD/oesophagitis records",
+          " -- they are exports for other studies.\n", sep = "")
   }
   if (!("rds" %in% sources)) return(NULL)
 

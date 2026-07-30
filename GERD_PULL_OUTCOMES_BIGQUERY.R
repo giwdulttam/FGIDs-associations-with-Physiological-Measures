@@ -167,10 +167,23 @@ gerd_bq_billing <- function() {
     bigrquery::bq_table(proj, dset, tbl)), error = function(e) FALSE))
 }
 
-# Returns a SQL fragment defining a CTE that yields one column `ids` (an ARRAY).
-.gerd_bq_id_cte <- function(ds, seeds, cte, method) {
+# Returns a SELECT that yields one column, `concept_id`: the seeds plus their
+# descendants.
+#
+# NOTE: this deliberately returns a plain row set, NOT an aggregated ARRAY. An
+# earlier version built `ARRAY_AGG(...) AS ids` per concept set and then tested
+# membership with `x IN UNNEST((SELECT ids FROM the_cte))`. BigQuery rejects that
+# with:
+#
+#   Correlated subqueries that reference other tables are not supported unless
+#   they can be de-correlated ... [invalidQuery]
+#
+# because the scalar subquery is evaluated per condition_occurrence row. The
+# concept sets are now joined to condition_occurrence instead, which both filters
+# and flags in one pass and is what BigQuery optimises well.
+.gerd_bq_id_select <- function(ds, seeds, method) {
   s <- paste(seeds, collapse = ", ")
-  body <- switch(
+  switch(
     method,
     ancestor = sprintf("
         SELECT descendant_concept_id AS concept_id
@@ -189,7 +202,6 @@ gerd_bq_billing <- function() {
         WHERE c.is_standard = 1 AND c.is_selectable = 1
         UNION DISTINCT SELECT concept_id FROM UNNEST([%s]) AS concept_id", ds, ds, s, s),
     seed = sprintf("SELECT concept_id FROM UNNEST([%s]) AS concept_id", s))
-  sprintf("%s AS (SELECT ARRAY_AGG(DISTINCT concept_id) AS ids FROM (%s))", cte, body)
 }
 
 # ==============================================================================
@@ -252,10 +264,23 @@ gerd_bq_pull_outcomes <- function(out_dir = ".", person_ids = NULL,
     pid_filter <- if (is.null(ids)) "" else
       paste0("\n        AND co.person_id IN UNNEST([",
              paste(sprintf("%.0f", ids), collapse = ","), "])")
+    # outcome_concepts is one row per concept with two flags. The INNER JOIN onto
+    # it is what restricts condition_occurrence to the two concept sets, so no
+    # membership test appears in the SELECT list or WHERE clause. A concept in
+    # both sets (e.g. reflux oesophagitis) gets both flags, which is exactly the
+    # signal the exclusion downstream needs.
     sql <- sprintf("
-      WITH
-      %s,
-      %s
+      WITH outcome_concepts AS (
+        SELECT concept_id,
+               LOGICAL_OR(src = 'gerd') AS in_gerd_set,
+               LOGICAL_OR(src = 'eso')  AS in_eso_set
+        FROM (
+          SELECT concept_id, 'gerd' AS src FROM (%s)
+          UNION ALL
+          SELECT concept_id, 'eso'  AS src FROM (%s)
+        )
+        GROUP BY concept_id
+      )
       SELECT
         co.person_id,
         co.condition_concept_id,
@@ -265,13 +290,13 @@ gerd_bq_pull_outcomes <- function(out_dir = ".", person_ids = NULL,
         co.stop_reason,
         co.condition_status_source_value,
         co.condition_status_concept_id,
-        co.condition_concept_id IN UNNEST((SELECT ids FROM gerd_set)) AS in_gerd_set,
-        co.condition_concept_id IN UNNEST((SELECT ids FROM eso_set))  AS in_eso_set
-      FROM `%s.condition_occurrence` co%s
-      WHERE (co.condition_concept_id IN UNNEST((SELECT ids FROM gerd_set))
-          OR co.condition_concept_id IN UNNEST((SELECT ids FROM eso_set)))%s",
-      .gerd_bq_id_cte(ds, GERD_ALL_SEEDS,    "gerd_set", method),
-      .gerd_bq_id_cte(ds, ESOPHAGITIS_SEEDS, "eso_set",  method),
+        oc.in_gerd_set,
+        oc.in_eso_set
+      FROM `%s.condition_occurrence` co
+      JOIN outcome_concepts oc ON co.condition_concept_id = oc.concept_id%s
+      WHERE TRUE%s",
+      .gerd_bq_id_select(ds, GERD_ALL_SEEDS,    method),
+      .gerd_bq_id_select(ds, ESOPHAGITIS_SEEDS, method),
       sel_names, ds, join_names, pid_filter)
 
     tb <- bigrquery::bq_project_query(bill, sql)
