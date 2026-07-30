@@ -18,8 +18,8 @@
 GERD_SEARCH_DIRS <- c()      # extra folders to scan; blank = auto
 GERD_MAX_MB      <- 120      # skip .rds files larger than this (the huge Fitbit tables)
 
-GERD_NO_ESO_SEEDS <- c(4144111)   # GERD without oesophagitis
-ESOPHAGITIS_SEEDS <- c(30753)     # Oesophagitis
+GERD_ALL_SEEDS    <- c(318800, 4144111)  # GERD (SNOMED 235595009) + the narrow child
+ESOPHAGITIS_SEEDS <- c(30753)            # Oesophagitis (SNOMED 16761005)
 
 suppressWarnings(suppressMessages({ library(dplyr) }))
 if (!grepl("UTF-8", Sys.getlocale("LC_CTYPE"), ignore.case = TRUE))
@@ -61,7 +61,7 @@ cat(length(files), " .rds files to check (skipping anything over ", GERD_MAX_MB,
 
 # ---- 2. Scan ------------------------------------------------------------------
 eso_pat  <- "esophagitis|oesophagitis"
-gerd_pat <- "reflux"
+gerd_pat <- "gastro-?o?esophageal reflux|\\bgerd\\b|reflux disease|reflux o?esophagitis"
 results <- list()
 
 for (i in seq_along(files)) {
@@ -75,21 +75,21 @@ for (i in seq_along(files)) {
   lc <- tolower(cname)
   without <- grepl("without\\s+o?esophagitis", lc)
 
-  n_gerd_id <- sum(d$condition_concept_id %in% GERD_NO_ESO_SEEDS, na.rm = TRUE)
+  n_gerd_id <- sum(d$condition_concept_id %in% GERD_ALL_SEEDS, na.rm = TRUE)
   n_eso_id  <- sum(d$condition_concept_id %in% ESOPHAGITIS_SEEDS, na.rm = TRUE)
   n_eso_nm  <- sum(grepl(eso_pat, lc) & !without, na.rm = TRUE)
   n_gerd_nm <- sum(grepl(gerd_pat, lc), na.rm = TRUE)
 
   if (n_gerd_id + n_eso_id + n_eso_nm + n_gerd_nm > 0) {
     keep <- grepl(paste0(eso_pat, "|", gerd_pat), lc) |
-      d$condition_concept_id %in% c(GERD_NO_ESO_SEEDS, ESOPHAGITIS_SEEDS)
+      d$condition_concept_id %in% c(GERD_ALL_SEEDS, ESOPHAGITIS_SEEDS)
     concepts <- d[keep, ] %>% count(condition_concept_id, standard_concept_name, sort = TRUE)
     n_part <- dplyr::n_distinct(d$person_id[keep])
     results[[nm]] <- list(file = f, rows = nrow(d),
                           n_gerd_id = n_gerd_id, n_eso_id = n_eso_id,
                           n_gerd_nm = n_gerd_nm, n_eso_nm = n_eso_nm,
                           n_part = n_part, concepts = concepts)
-    cat(sprintf("  HIT  %-40s seed4144111=%-5d seed30753=%-5d gerd-name=%-5d eso-name=%-5d people=%d\n",
+    cat(sprintf("  HIT  %-40s seed-gerd=%-5d seed30753=%-5d gerd-name=%-5d eso-name=%-5d people=%d\n",
                 substr(nm, 1, 40), n_gerd_id, n_eso_id, n_gerd_nm, n_eso_nm, n_part))
   }
   rm(d); invisible(gc(verbose = FALSE))
@@ -120,14 +120,14 @@ if (usable) {
   cat("===========================================================\n\n")
   cat("Exact seed-concept matches: ", n_exact, "\n", sep = "")
   cat("Most participants in one file: ", max_ppl, "\n\n", sep = "")
-  cat("You can build the outcome without BigQuery. Run:\n")
+  cat("You may be able to build the outcome without BigQuery. Run:\n")
   cat('  source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")\n\n')
 } else {
   cat("RESULT: NOT USABLE -- you need a Cohort Builder export.\n")
   cat("===========================================================\n\n")
   if (length(results)) {
     cat("Records WERE found, but they are not a GERD phenotype:\n")
-    cat("  * exact matches for concept 4144111 or 30753 : ", n_exact, "\n", sep = "")
+    cat("  * exact matches for concept 318800/4144111 or 30753 : ", n_exact, "\n", sep = "")
     cat("  * most participants in any one file          : ", max_ppl,
         "  (need >= ", MIN_PEOPLE, ")\n", sep = "")
     cat("\nWhat you are seeing is a handful of GERD-adjacent concepts that were\n")
@@ -137,12 +137,19 @@ if (usable) {
   } else {
     cat("No GERD or oesophagitis records were found at all.\n\n")
   }
-  cat("NEXT STEP -- Cohort Builder export (on the Workbench website):\n")
+  cat("NEXT STEP -- OPTION A (preferred): pull from the workspace's own BigQuery\n")
+  cat("dataset. The datasets under Resources (e.g. C2025Q4R6) are INSIDE this\n")
+  cat("workspace's VPC perimeter; the old All of Us production CDR is not, which\n")
+  cat("is what the [policyViolation] errors were about. Just run:\n\n")
+  cat('  source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")\n\n')
+  cat("It resolves the dataset and pulls the outcome for you. Only if that cannot\n")
+  cat("find the dataset do you need the manual export below.\n\n")
+  cat("OPTION B -- Cohort Builder export (on the Workbench website):\n")
   cat("  1. Data > Datasets > + New Dataset\n")
   cat("  2. Cohort      : your Fitbit + EHR cohort\n")
   cat("  3. Concept Sets: + Concept Set > Conditions, add BOTH, with descendants:\n")
-  cat("        4144111  Gastroesophageal reflux disease without oesophagitis\n")
-  cat("        30753    Oesophagitis\n")
+  cat("        318800   Gastroesophageal reflux disease  (SNOMED 235595009)\n")
+  cat("        30753    Oesophagitis                     (SNOMED 16761005)\n")
   cat("  4. Values      : select ALL Condition-domain columns\n")
   cat("  5. Save, then Analyze > Export to CSV\n")
   cat("  6. Copy the CSV next to your .rds files, then run RUN_GERD_ANALYSIS.R\n\n")

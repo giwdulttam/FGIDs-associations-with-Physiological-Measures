@@ -112,6 +112,101 @@ a self-contained methodological reference for reproducing and critiquing the stu
 
 \tableofcontents
 \newpage
+
+%======================================================================
+\section*{Protocol Amendment (supersedes parts of this report)}
+\addcontentsline{toc}{section}{Protocol Amendment (supersedes parts of this report)}
+%======================================================================
+\noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{%
+\textbf{Read this before the rest of the report.} Two decisions described in the
+body of this document have since been changed. Where the body and this section
+disagree, \textbf{this section is current}. The analysis code in the repository
+implements the amended design; the body of the report has not been rewritten.}}
+
+\subsection*{A1. The outcome definition changed}
+The body of this report defines \code{has_gerd_no_eso} as a standalone phenotype
+seeded on concept \textbf{4144111} (``GERD without oesophagitis''), pulled in
+parallel with oesophagitis (\textbf{30753}). Inspection of the cohort in the
+\emph{All of Us} Cohort Builder showed substantial overlap between participants
+carrying 4144111 and participants carrying oesophagitis codes: the ``without
+oesophagitis'' label on the concept does not, in practice, identify a
+non-oesophagitic group, because participants accumulate both kinds of code over
+time. Seeding on 4144111 therefore does not deliver the contrast the study
+intends.
+
+The amended design pulls the \emph{broad} GERD concept and derives the
+non-oesophagitic group by exclusion:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l l l@{}}
+\toprule
+\textbf{Outcome} & \textbf{Source} & \textbf{Rule} \\
+\midrule
+\code{has_gerd_any}    & seed \textbf{318800} (SNOMED 235595009) + descendants & $\geq 2$ records \\
+\code{has_gerd_no_eso} & derived & GERD case with \emph{no} oesophagitis record, ever \\
+\code{has_esophagitis} & seed \textbf{30753} (SNOMED 16761005) + descendants   & $\geq 2$ records \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Consequences for the analysis, all implemented in
+\code{GERD Analysis Helpers R9.R}:
+
+\begin{itemize}
+\item \textbf{There are now three outcomes, not two}, so the analysis grid is
+$3 \times 3 = 9$ configurations rather than the six described in
+Section~\ref{sec:six-configs-ref} of the body. \code{has_gerd_any} and
+\code{has_gerd_no_eso} are \emph{nested}, not parallel; \code{has_esophagitis} is
+the complementary group.
+\item \textbf{The exclusion is applied at the person level over the entire record
+history}, not only to records meeting the $\geq 2$ rule and not only to records
+after the Fitbit anchor. A single oesophagitis code at any point disqualifies a
+participant. The threshold is exposed as
+\code{GERD_ESO_EXCLUSION_MIN_RECORDS} (default 1).
+\item \textbf{Participants carrying any oesophagitis record are removed from the
+\code{gerd_no_eso} analytic sample entirely}, rather than retained as controls.
+Retaining them would place acid-disease patients in the reference group and bias
+the odds ratios toward the null. The realised sample size for that outcome is
+printed at run time and differs from the other two.
+\item \textbf{Quartile cutoffs remain fixed on the full eligible cohort} and are
+deliberately not recomputed within the restricted sample, so that Q1--Q4 denote
+identical exposure ranges across all three outcomes and the estimates stay
+mutually comparable.
+\item \textbf{The scope caveat on \textnormal{30753} now matters twice.} Its
+descendants include non-reflux oesophagitis (eosinophilic, infectious,
+pill-induced, radiation). That concept set defines the \code{esophagitis} outcome
+\emph{and} drives the exclusion that defines \code{gerd_no_eso}, so an over-broad
+seed inflates one outcome and shrinks another. The code emits a diagnostic if the
+exclusion removes more than 75\% of the GERD group.
+\end{itemize}
+
+\subsection*{A2. The outcome pull now queries the workspace's own dataset}
+The body describes \code{GERD Outcome Data Upload R9.R}, which queries
+\code{fc-aou-cdr-prod-ct.C2024Q3R9} and exports through Cloud Storage. In the
+migrated workspace that project lies \emph{outside} the VPC Service Controls
+perimeter, and every request fails with
+\code{policyViolation}. The replacement,
+\code{GERD_PULL_OUTCOMES_BIGQUERY.R}, resolves the BigQuery dataset attached to
+the workspace as a Resource (e.g.\ \code{C2025Q4R6}, which is inside the
+perimeter), expands descendants through \code{concept_ancestor} with a
+\code{cb_criteria} fallback, restricts to the Fitbit cohort's \code{person_id}s,
+and downloads directly --- removing the Cloud Storage hop entirely. The original
+script is retained for workspaces with classic All of Us BigQuery access.
+
+\subsection*{A3. Deliverables, as amended}
+{\small\noindent
+\code{GERD_PULL_OUTCOMES_BIGQUERY.R},\;
+\code{GERD Analysis Helpers R9.R},\;
+\code{GERD Data Prep R9.R},\;
+\code{RUN_GERD_ANALYSIS.R},\;
+\code{Sleep and GERD Analysis File R9.R},\;
+\code{Activity and GERD Analysis File R9.R},\;
+\code{Activity Sleep and GERD Analysis File R9.R},\;
+\code{GERD_FIND_OUTCOME_DATA.R},\;
+\code{GERD Pharmacologics Data Upload.R}.}
+
+\newpage
 \section{Executive Summary}
 
 This report specifies a retrospective, cross-sectional analysis conducted in the All of Us Research Program (Controlled Tier Curated Data Repository v9, release C2024Q3R9) that relates objectively measured, Fitbit-recorded physiological exposures -- sleep and physical activity -- to acid-related upper gastrointestinal disease ascertained from electronic health records (EHR). The study is deliberately built around \emph{two} binary outcome phenotypes and \emph{three} exposure sets, yielding a $2 \times 3$ grid of six primary analysis configurations that share a single statistical engine.
@@ -1545,7 +1640,7 @@ against $4/N$); and \textbf{(5)} linearity in the logit for continuous covariate
 x$ term for median BMI). It runs for both outcomes of every configuration.
 
 %======================================================================
-\section{The Six Analysis Configurations in Detail}
+\section{The Six Analysis Configurations in Detail}\label{sec:six-configs-ref}
 %======================================================================
 The design crosses two outcomes with three exposure sets. The six resulting configurations are
 summarized in Table~\ref{tab:sixdetail} and described individually below. Configurations sharing a

@@ -15,9 +15,14 @@
 # ==============================================================================
 # SETTINGS -- leave blank to auto-detect. Only fill in if auto-detection fails.
 # ==============================================================================
-GERD_DATA_DIR <- ""    # folder holding the .rds datasets
-GERD_CODE_DIR <- ""    # folder holding the GERD .R scripts
-GERD_RUN      <- c("sleep", "activity", "combined")   # which analyses to run
+# Set any of these in the Console BEFORE sourcing and they are respected -- these
+# lines only supply defaults. (Assigning unconditionally would wipe out, say, a
+# GERD_BQ_DATASET you had just pasted in.) Each is still validated below, so a
+# stale value from an earlier session falls through to auto-detection.
+if (!exists("GERD_DATA_DIR"))   GERD_DATA_DIR   <- ""  # folder holding the .rds datasets
+if (!exists("GERD_CODE_DIR"))   GERD_CODE_DIR   <- ""  # folder holding the GERD .R scripts
+if (!exists("GERD_RUN"))        GERD_RUN        <- c("sleep", "activity", "combined")
+if (!exists("GERD_BQ_DATASET")) GERD_BQ_DATASET <- ""  # "project-id.C2025Q4R6"
 
 # ==============================================================================
 # Everything below is automatic.
@@ -39,6 +44,7 @@ cat("[1/6] Locale: ", Sys.getlocale("LC_CTYPE"), "\n", sep = "")
 
 ## ---- 2. Find the code --------------------------------------------------------
 .needed <- c("GERD Analysis Helpers R9.R", "GERD Data Prep R9.R",
+             "GERD_PULL_OUTCOMES_BIGQUERY.R",
              "Sleep and GERD Analysis File R9.R",
              "Activity and GERD Analysis File R9.R",
              "Activity Sleep and GERD Analysis File R9.R")
@@ -90,9 +96,15 @@ cat("[2/6] Code folder: ", GERD_CODE_DIR, "\n", sep = "")
 .has_data <- function(d) length(d) == 1 && nzchar(d) && dir.exists(d) &&
   any(file.exists(file.path(d, .data_probe)))
 
+# Workspace Resources (buckets, datasets) are mounted under ~/workspace by the
+# Workbench, so every plausible mount point is checked before the slow search.
 if (!.has_data(GERD_DATA_DIR)) {
-  for (cand in c(GERD_DATA_DIR, getwd(), path.expand(
-      "~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup"))) {
+  for (cand in c(GERD_DATA_DIR, getwd(),
+      path.expand("~/workspace/rw-migration-aou-rw-b5f00092-updated/rw-migration-aou-rw-b5f00092/rds_backup"),
+      path.expand("~/workspace/rw-migration-aou-rw-b5f00092/rds_backup"),
+      path.expand("~/workspace/rds_backup"),
+      path.expand("~/workspace/Dataset"),
+      path.expand("~/workspace"))) {
     if (.has_data(cand)) { GERD_DATA_DIR <- cand; break }
   }
 }
@@ -119,6 +131,7 @@ suppressWarnings(suppressMessages({
 }))
 cat("[4/6] Engine loaded (primary outcome rule: ", GERD_PRIMARY_DEF,
     ", p-adjust: ", GERD_P_ADJUST, ")\n", sep = "")
+cat("      outcomes: ", paste(GERD_RUN_OUTCOMES, collapse = ", "), "\n", sep = "")
 
 ## ---- 5. Make sure the outcome files exist ------------------------------------
 cat("[5/6] Outcome files\n")
@@ -158,7 +171,7 @@ if (dir.exists(.out)) {
   .f <- sort(list.files(.out))
   cat("\n", length(.f), " result files are in:\n  ", .out, "\n\n", sep = "")
   cat("Open them with, for example:\n")
-  cat('  read.csv("', file.path(.out, "sleep_gerd_no_eso_table1.csv"),
+  cat('  read.csv("', file.path(.out, "sleep_gerd_any_table1.csv"),
       '", check.names = FALSE)\n', sep = "")
   cat("\nOr: Files pane -> rds_backup -> manuscript_output -> tick -> More -> Export\n")
 } else {

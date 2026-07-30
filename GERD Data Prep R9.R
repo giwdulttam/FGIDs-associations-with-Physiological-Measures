@@ -60,10 +60,58 @@ drop_big <- function(...) {
 # ==============================================================================
 # 0b) All of Us environment repair + outcome-file bootstrapping
 # ==============================================================================
+# --- Outcome seed concepts -----------------------------------------------------
+# GERD (all)   318800  SNOMED 235595009 -- the broad group
+# Oesophagitis 30753   SNOMED 16761005
+# 4144111 ("GERD without esophagitis") is kept only so that records already coded
+# with it are recognised as GERD. It is NOT a standalone phenotype any more: it
+# overlaps heavily with oesophagitis, so "GERD without oesophagitis" is derived by
+# excluding oesophagitis carriers from the broad group (see build_gerd_outcomes).
+GERD_ALL_SEED_IDS <- c(318800, 4144111)
+GERD_ESO_SEED_IDS <- c(30753)
+
 # Minimum participants required before a locally-assembled outcome is accepted
 # when there are no exact seed-concept matches. Below this it is incidental noise
 # from another study's concept set, not a phenotype.
 GERD_MIN_LOCAL_PARTICIPANTS <- 50
+
+# ------------------------------------------------------------------------------
+# The Fitbit cohort's person_ids, from whatever local files exist. Used to
+# restrict the BigQuery pull -- without it the query returns every participant in
+# the CDR who has ever been coded for reflux.
+# ------------------------------------------------------------------------------
+gerd_cohort_person_ids <- function(data_dir = ".") {
+  cands <- c("valid_population_sleep.rds", "R9_valid_population.rds",
+             "valid_population.rds", "sleep_summary_filtered.rds",
+             "R9_steps_summary_filtered.rds", "steps_summary_filtered.rds",
+             "R9_sleep_summary_filtered_gerd.rds")
+  ids <- unlist(lapply(cands, function(f) {
+    p <- file.path(data_dir, f)
+    if (!file.exists(p)) return(NULL)
+    d <- tryCatch(readRDS(p), error = function(e) NULL)
+    if (is.data.frame(d) && "person_id" %in% names(d)) unique(d$person_id) else NULL
+  }))
+  ids <- unique(stats::na.omit(ids))
+  if (!length(ids)) return(NULL)
+  message("  Fitbit cohort for the outcome pull: ", length(ids), " participants")
+  ids
+}
+
+# ------------------------------------------------------------------------------
+# Read the two outcome pulls, accepting either the current file names or the
+# older R9_gerd_no_eso_outcome.rds from before the definition changed.
+# ------------------------------------------------------------------------------
+gerd_read_outcome_pulls <- function(required = TRUE) {
+  gerd_all <- read_first_existing(
+    c("R9_gerd_all_outcome.rds", "R9_gerd_no_eso_outcome.rds"),
+    "GERD condition records", required = required)
+  eso <- read_first_existing("R9_esophagitis_outcome.rds",
+    "Oesophagitis condition records", required = required)
+  for (.d in list(gerd_all, eso))
+    if (!is.null(.d))
+      stopifnot(all(c("person_id", "condition_start_datetime") %in% names(.d)))
+  list(gerd_all = gerd_all, esophagitis = eso)
+}
 # The Workbench normally sets WORKSPACE_BUCKET / OWNER_EMAIL / GOOGLE_PROJECT.
 # When an R session starts before that happens they come back empty, and any
 # BigQuery export silently builds a broken path like "/bq_exports//..." and then
@@ -119,23 +167,27 @@ gerd_fix_aou_env <- function(verbose = TRUE) {
 # Find the best available source of GERD/oesophagitis condition records among ALL
 # condition-style files in the data folder(s), plus any Cohort Builder CSV export.
 # Returns a single condition-format data frame, or NULL.
-gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = 4144111,
-                                       eso_ids = 30753, max_mb = 120, verbose = TRUE) {
+gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = GERD_ALL_SEED_IDS,
+                                       eso_ids = GERD_ESO_SEED_IDS, max_mb = 120,
+                                       verbose = TRUE, sources = c("csv", "rds")) {
   data_dirs <- unique(data_dirs[nzchar(data_dirs) & dir.exists(data_dirs)])
   if (!length(data_dirs)) return(NULL)
 
   ## (a) a Cohort Builder CSV/CSV.GZ export, if one is present
-  csvs <- unlist(lapply(data_dirs, function(d)
-    list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)))
-  for (p in csvs) {
-    d <- tryCatch(suppressWarnings(readr::read_csv(p, show_col_types = FALSE,
-                                                   progress = FALSE, n_max = 5)),
-                  error = function(e) NULL)
-    if (!is.null(d) && "condition_concept_id" %in% names(d)) {
-      if (verbose) cat("  [source] Cohort Builder CSV export: ", basename(p), "\n", sep = "")
-      return(suppressWarnings(readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
+  if ("csv" %in% sources) {
+    csvs <- unlist(lapply(data_dirs, function(d)
+      list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)))
+    for (p in csvs) {
+      d <- tryCatch(suppressWarnings(readr::read_csv(p, show_col_types = FALSE,
+                                                     progress = FALSE, n_max = 5)),
+                    error = function(e) NULL)
+      if (!is.null(d) && "condition_concept_id" %in% names(d)) {
+        if (verbose) cat("  [source] Cohort Builder CSV export: ", basename(p), "\n", sep = "")
+        return(suppressWarnings(readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
+      }
     }
   }
+  if (!("rds" %in% sources)) return(NULL)
 
   ## (b) otherwise scan condition-style .rds files, smallest first
   files <- unlist(lapply(data_dirs, function(d)
@@ -164,16 +216,19 @@ gerd_find_condition_source <- function(data_dirs = ".", gerd_ids = 4144111,
 }
 
 gerd_outcomes_from_condition_df <- function(data_dir = ".",
-                                            gerd_ids = 4144111, eso_ids = 30753,
-                                            gerd_pattern = "gastro-?o?esophageal reflux|gastro-?esophageal reflux|\\bgerd\\b|reflux disease",
+                                            gerd_ids = GERD_ALL_SEED_IDS,
+                                            eso_ids = GERD_ESO_SEED_IDS,
+                                            gerd_pattern = "gastro-?o?esophageal reflux|gastro-?esophageal reflux|\\bgerd\\b|reflux disease|reflux o?esophagitis",
                                             eso_pattern  = "esophagitis|oesophagitis",
                                             write = TRUE, verbose = TRUE,
-                                            extra_dirs = character(0)) {
+                                            extra_dirs = character(0),
+                                            sources = c("csv", "rds")) {
   if (verbose) cat("  Searching your files for reflux / oesophagitis records...\n")
   dirs <- unique(c(data_dir, extra_dirs,
                    dirname(normalizePath(data_dir, mustWork = FALSE)),
                    path.expand("~/workspace/Dataset")))
-  cond <- gerd_find_condition_source(dirs, gerd_ids, eso_ids, verbose = verbose)
+  cond <- gerd_find_condition_source(dirs, gerd_ids, eso_ids, verbose = verbose,
+                                     sources = sources)
   if (is.null(cond)) {
     if (verbose) cat("   no condition-style file contained matching records.\n")
     return(NULL)
@@ -181,35 +236,30 @@ gerd_outcomes_from_condition_df <- function(data_dir = ".",
   nm <- if ("standard_concept_name" %in% names(cond)) cond$standard_concept_name else ""
   nm_lc <- tolower(nm)
 
+  # The two sets deliberately OVERLAP. Under the current definition the GERD set
+  # is the broad group (318800 and descendants), which includes reflux
+  # oesophagitis; a record can therefore be GERD *and* oesophagitis, and that is
+  # exactly the signal the exclusion in build_gerd_outcomes() acts on.
+  #
   # CAREFUL: the concept name for 4144111 is "Gastroesophageal reflux disease
   # WITHOUT esophagitis" -- it contains the word "esophagitis". Matching on that
-  # word alone puts every GERD-without-oesophagitis record into the oesophagitis
-  # group and inverts the study. So:
-  #   (a) an explicit concept-id match always wins, and
-  #   (b) the name fallback treats "without (o)esophagitis" as NOT oesophagitis.
+  # word alone would file every such record as oesophagitis and invert the
+  # exclusion, so "without (o)esophagitis" is explicitly not an oesophagitis hit.
   id_gerd <- cond$condition_concept_id %in% gerd_ids
   id_eso  <- cond$condition_concept_id %in% eso_ids
   says_without <- grepl("without\\s+o?esophagitis", nm_lc)
 
   nm_eso  <- grepl(eso_pattern, nm_lc) & !says_without
-  nm_gerd <- grepl(gerd_pattern, nm_lc) & !nm_eso
+  nm_gerd <- grepl(gerd_pattern, nm_lc)
 
-  # Exact concept-id matches take priority. Name matching is only used to pick up
-  # DESCENDANT concepts (which carry different ids and cannot be expanded locally),
-  # and only when it does not contradict an exact id match. The breakdown is
-  # printed so the captured set is auditable rather than implicit.
   has_exact <- any(id_gerd) || any(id_eso)
-  if (identical(getOption("gerd.local_match", "id_then_name"), "id_only") && has_exact) {
-    is_eso  <- id_eso
-    is_gerd <- id_gerd
-  } else {
-    is_eso  <- id_eso | (!id_gerd & nm_eso)
-    is_gerd <- (id_gerd | nm_gerd) & !is_eso
-  }
+  is_eso  <- id_eso  | nm_eso
+  is_gerd <- id_gerd | nm_gerd
   if (verbose) {
     cat("   matched by concept id : GERD ", sum(id_gerd), " | oesophagitis ", sum(id_eso), "\n", sep = "")
     cat("   added by concept name : GERD ", sum(is_gerd & !id_gerd),
         " | oesophagitis ", sum(is_eso & !id_eso), "\n", sep = "")
+    cat("   in BOTH sets          : ", sum(is_gerd & is_eso), "\n", sep = "")
     if (!has_exact)
       cat("   NOTE: no exact seed-id matches; classification is name-based only.\n")
   }
@@ -231,7 +281,7 @@ gerd_outcomes_from_condition_df <- function(data_dir = ".",
   e <- shape(cond[is_eso,  , drop = FALSE])
 
   if (verbose) {
-    cat("   GERD-without-oesophagitis records:", nrow(g),
+    cat("   GERD (all) records:              ", nrow(g),
         " participants:", dplyr::n_distinct(g$person_id), "\n")
     cat("   Oesophagitis records:            ", nrow(e),
         " participants:", dplyr::n_distinct(e$person_id), "\n")
@@ -263,79 +313,106 @@ gerd_outcomes_from_condition_df <- function(data_dir = ".",
   }
 
   if (write) {
-    saveRDS(g, file.path(data_dir, "R9_gerd_no_eso_outcome.rds"))
+    saveRDS(g, file.path(data_dir, "R9_gerd_all_outcome.rds"))
     saveRDS(e, file.path(data_dir, "R9_esophagitis_outcome.rds"))
-    if (verbose) cat("   Wrote R9_gerd_no_eso_outcome.rds and R9_esophagitis_outcome.rds\n")
+    if (verbose) cat("   Wrote R9_gerd_all_outcome.rds and R9_esophagitis_outcome.rds\n")
   }
-  list(gerd_no_eso = g, esophagitis = e)
+  list(gerd_all = g, esophagitis = e)
 }
 
-# Make sure both outcome files exist, using whichever route works:
-#   1. already present  ->  use them
-#   2. R9_condition_df contains the records  ->  build locally (no BigQuery)
-#   3. otherwise  ->  run the BigQuery pull (repairing the environment first)
+# Make sure both outcome pulls exist, trying the routes in order of rigour:
+#   1. already present                      -> use them
+#   2. a Cohort Builder CSV export is here  -> build from it
+#   3. the workspace's own BigQuery dataset -> query it directly
+#   4. concept records inside the .rds files -> local approximation (gated)
+# Returns the route name.
 gerd_ensure_outcome_files <- function(data_dir = ".", code_dir = ".",
                                       allow_bigquery = TRUE) {
-  f1 <- file.path(data_dir, "R9_gerd_no_eso_outcome.rds")
-  f2 <- file.path(data_dir, "R9_esophagitis_outcome.rds")
-  if (file.exists(f1) && file.exists(f2)) {
-    cat("  Outcome files already present -- skipping the pull.\n"); return("existing")
+  f1  <- file.path(data_dir, "R9_gerd_all_outcome.rds")
+  f1b <- file.path(data_dir, "R9_gerd_no_eso_outcome.rds")   # pre-change name
+  f2  <- file.path(data_dir, "R9_esophagitis_outcome.rds")
+  have <- function() (file.exists(f1) || file.exists(f1b)) && file.exists(f2)
+  if (have()) {
+    cat("  Outcome files already present -- skipping the pull.\n")
+    if (!file.exists(f1) && file.exists(f1b))
+      cat("  NOTE: using R9_gerd_no_eso_outcome.rds, which was pulled with the OLD\n",
+          "       narrow concept (4144111). To switch to the broad-GERD definition,\n",
+          "       delete it and re-run so the pull happens again.\n", sep = "")
+    return("existing")
   }
 
   cat("\n-- Outcome files not found. Trying to build them. --\n")
-  loc <- tryCatch(gerd_outcomes_from_condition_df(data_dir), error = function(e) NULL)
-  if (!is.null(loc)) {
-    cat("  Built the outcome files locally from R9_condition_df (no BigQuery needed).\n")
-    cat("  NOTE: this is a local match, not the Cohort Builder descendant expansion.\n",
-        "       If you want the definitive concept set, run\n",
-        "       \"GERD Outcome Data Upload R9.R\" once and re-run this script.\n", sep = "")
-    return("local")
+
+  ## (2) a Cohort Builder CSV export sitting next to the data
+  csv <- tryCatch(gerd_outcomes_from_condition_df(data_dir, sources = "csv"),
+                  error = function(e) NULL)
+  if (!is.null(csv)) {
+    cat("  Built the outcome files from a Cohort Builder CSV export.\n")
+    return("csv")
   }
 
+  ## (3) the workspace's own BigQuery dataset
   .cb_help <- paste0(
     "\n-------------------------------------------------------------------\n",
     "WHAT TO DO NEXT\n",
     "-------------------------------------------------------------------\n",
-    "No GERD / oesophagitis records were found in any of your .rds files, so\n",
-    "the outcome must come from a Cohort Builder export.\n\n",
-    "In the All of Us Workbench website (not RStudio):\n",
+    "The outcome records could not be obtained automatically. Either point the\n",
+    "BigQuery pull at the right dataset, or export the records by hand.\n\n",
+    "OPTION A -- BigQuery (preferred; the datasets are Workspace Resources)\n",
+    "  1. Workbench website > your workspace > Resources\n",
+    "  2. Click the BigQuery dataset (e.g. C2025Q4R6) and copy its cloud id,\n",
+    "     which looks like  <project-id>.C2025Q4R6\n",
+    "  3. In RStudio:\n",
+    '       GERD_BQ_DATASET <- "<project-id>.C2025Q4R6"\n',
+    '       source("~/workspace/gerd_code/GERD_PULL_OUTCOMES_BIGQUERY.R")\n',
+    "  4. Re-run RUN_GERD_ANALYSIS.R\n\n",
+    "OPTION B -- Cohort Builder export\n",
     "  1. Data > Datasets > + New Dataset\n",
-    "  2. Cohort  : your Fitbit + EHR cohort\n",
-    "  3. Concept Sets > + Concept Set > Conditions, and add BOTH:\n",
-    "       4144111  Gastroesophageal reflux disease without oesophagitis\n",
-    "       30753    Oesophagitis\n",
-    "     (tick 'include descendants')\n",
+    "  2. Cohort  : your Fitbit + EHR cohort (Controlled Data)\n",
+    "  3. Concept Sets > + Concept Set > Conditions, add BOTH with descendants:\n",
+    "       318800  Gastroesophageal reflux disease   (SNOMED 235595009)\n",
+    "       30753   Oesophagitis                      (SNOMED 16761005)\n",
     "  4. Values   : select ALL columns for the Condition domain\n",
     "  5. Save, then Analyze > Export to CSV\n",
-    "  6. The CSV lands in your workspace bucket / Dataset folder. Move or copy\n",
-    "     it next to your .rds files, then re-run this script -- it detects the\n",
-    "     CSV automatically.\n\n",
-    "Full instructions: HOW_TO_RUN_GERD_ANALYSIS.md, section 3.\n",
+    "  6. Copy the CSV next to your .rds files and re-run -- it is detected\n",
+    "     automatically.\n\n",
+    "Full instructions: HOW_TO_RUN_GERD_ANALYSIS.md\n",
     "-------------------------------------------------------------------\n")
 
-  if (!allow_bigquery) stop("Outcome files missing and local build failed.", .cb_help, call. = FALSE)
+  if (allow_bigquery) {
+    up <- file.path(code_dir, "GERD_PULL_OUTCOMES_BIGQUERY.R")
+    if (file.exists(up)) {
+      cat("  Trying the workspace's own BigQuery dataset...\n")
+      gerd_fix_aou_env(verbose = FALSE)
+      bq <- tryCatch({
+        # Load the pull's functions without firing its standalone auto-run, then
+        # call it with the cohort filter. Both flags must live in globalenv(),
+        # which is where sys.source() evaluates the script.
+        assign("GERD_BQ_NO_AUTORUN", TRUE, envir = globalenv())
+        sys.source(up, envir = globalenv())
+        ids <- gerd_cohort_person_ids(data_dir)
+        get("gerd_bq_pull_outcomes", envir = globalenv())(out_dir = data_dir,
+                                                          person_ids = ids)
+        TRUE
+      }, error = function(e) {
+        message("\n*** BigQuery route failed: ", conditionMessage(e)); FALSE
+      })
+      if (isTRUE(bq) && have()) return("bigquery")
+    }
+  }
 
-  cat("  No local source found. Trying the BigQuery pull as a last resort.\n")
-  ok <- gerd_fix_aou_env()
-  if (!ok)
-    stop("Cannot run the BigQuery pull: the All of Us environment variables are not set ",
-         "and could not be recovered.", .cb_help, call. = FALSE)
+  ## (4) local approximation from the .rds files -- weakest route, gated
+  cat("  Falling back to scanning your .rds files.\n")
+  loc <- tryCatch(gerd_outcomes_from_condition_df(data_dir, sources = "rds"),
+                  error = function(e) NULL)
+  if (!is.null(loc)) {
+    cat("  Built the outcome files by matching concepts inside your existing .rds files.\n")
+    cat("  NOTE: this is a local match, NOT a descendant expansion. Use Option A or B\n",
+        "        below for the numbers that go in the paper.\n", sep = "")
+    return("local")
+  }
 
-  up <- file.path(code_dir, "GERD Outcome Data Upload R9.R")
-  if (!file.exists(up)) stop("Cannot find: ", up, call. = FALSE)
-  old <- getwd(); on.exit(setwd(old), add = TRUE); setwd(data_dir)
-
-  bq <- tryCatch({ source(up); TRUE }, error = function(e) {
-    msg <- conditionMessage(e)
-    if (grepl("VPC Service Controls|policyViolation", msg)) {
-      message("\n*** BigQuery is blocked in this workspace by VPC Service Controls. ***\n",
-              "This is an organisational policy, not something the code can work around.")
-    } else message("\n*** BigQuery pull failed: ", msg)
-    FALSE
-  })
-  if (!bq || !file.exists(f1) || !file.exists(f2))
-    stop("Could not obtain the outcome data.", .cb_help, call. = FALSE)
-  "bigquery"
+  stop("Could not obtain the outcome data.", .cb_help, call. = FALSE)
 }
 
 # ==============================================================================

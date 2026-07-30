@@ -75,16 +75,74 @@ GERD_OUTPUT_DIR <- "manuscript_output"
 # ==============================================================================
 # 1) Outcomes, exposures, covariates, labels
 # ==============================================================================
-# The two outcome phenotypes. These are PARALLEL, not nested: "GERD without
-# oesophagitis" (seed concept 4144111) and "Oesophagitis" (seed concept 30753)
-# come from two separate descendant-expanded pulls. A participant may carry codes
-# from both, so they are not mutually exclusive either.
+# --- Outcome phenotypes --------------------------------------------------------
+# Two descendant-expanded pulls:
+#     GERD (all)     seed 318800  (SNOMED 235595009)
+#     Oesophagitis   seed 30753   (SNOMED 16761005)
+#
+# and three analysis outcomes built from them:
+#
+#   gerd_any     any GERD code                       -- the parent group
+#   gerd_no_eso  GERD code AND no oesophagitis code  -- derived by EXCLUSION
+#   esophagitis  any oesophagitis code
+#
+# NOTE ON THE DESIGN CHANGE. An earlier version used the narrow concept 4144111
+# ("GERD without esophagitis") as a standalone phenotype. Checking the cohort in
+# the Cohort Builder showed heavy overlap between 4144111 and oesophagitis --
+# people carry both codes -- so 4144111 does not actually identify a
+# non-oesophagitic group. Excluding oesophagitis from the broad GERD group does.
+# gerd_any and gerd_no_eso are nested; esophagitis is the complementary group.
+#
+# `restrict` narrows the analytic sample for that outcome. For gerd_no_eso the
+# controls must be people with NEITHER condition, so participants carrying any
+# oesophagitis record are dropped from the sample entirely -- not kept as
+# controls, which would put acid-disease patients in the reference group and bias
+# the odds ratios towards the null.
 GERD_OUTCOMES <- list(
+  gerd_any    = list(col = "has_gerd_any",
+                     labels = c("No GERD", "GERD (all)")),
   gerd_no_eso = list(col = "has_gerd_no_eso",
-                     labels = c("No GERD", "GERD without oesophagitis")),
+                     labels = c("No GERD or oesophagitis", "GERD without oesophagitis"),
+                     restrict = function(d)
+                       if ("has_eso_any_record" %in% names(d))
+                         d[!(d$has_eso_any_record %in% TRUE), , drop = FALSE] else d,
+                     restrict_note =
+                       "participants with any oesophagitis record removed"),
   esophagitis = list(col = "has_esophagitis",
                      labels = c("No oesophagitis", "Oesophagitis"))
 )
+
+# Which of the above to actually model. Trim this to shorten a run.
+GERD_RUN_OUTCOMES <- c("gerd_any", "gerd_no_eso", "esophagitis")
+
+# Every outcome-derived column build_gerd_outcomes() can produce. Analysis files
+# use this to NA-fill after the left join, without touching the has_* covariates
+# (has_pud, has_ibs, has_depression, ...) which live in the same namespace.
+gerd_outcome_columns <- function() {
+  base <- c("has_gerd_any", "has_gerd_no_eso", "has_esophagitis")
+  c(as.vector(outer(base, c("", "_ever", "_post_fitbit", "_sens"), paste0)),
+    "has_eso_any_record")
+}
+
+# One consistent case-count block for every analysis file.
+gerd_cohort_summary <- function(df, label) {
+  n1 <- function(v) if (v %in% names(df)) sum(df[[v]] %in% TRUE) else NA_integer_
+  cat("\n================ ", label, " COHORT SUMMARY ================\n", sep = "")
+  cat("N =", nrow(df), "| duplicate person_ids:", sum(duplicated(df$person_id)), "\n")
+  cat("  GERD (all), primary                 :", n1("has_gerd_any"), "\n")
+  cat("  GERD without oesophagitis, primary  :", n1("has_gerd_no_eso"), "\n")
+  cat("  Oesophagitis, primary               :", n1("has_esophagitis"), "\n")
+  cat("  Any oesophagitis record             :", n1("has_eso_any_record"),
+      "(dropped from the gerd_no_eso sample)\n")
+  cat("  GERD (all), sensitivity definition  :", n1("has_gerd_any_sens"), "\n")
+  invisible(NULL)
+}
+
+# How much oesophagitis disqualifies someone from the "GERD without oesophagitis"
+# group. 1 = any oesophagitis record at all (the conservative default, and what
+# "remove any participants that also have esophagitis" means). Set to 2 to require
+# the same >=2-record rule used for the outcomes themselves.
+GERD_ESO_EXCLUSION_MIN_RECORDS <- 1
 
 SLEEP_EXPOSURES <- c(
   "min_asleep_quartile", "min_in_bed_quartile", "min_awake_quartile",
@@ -195,6 +253,7 @@ GERD_LABELS <- c(
   smoking_binary            = "Smoking status",
   cci_cat                   = "Charlson Comorbidity Index Score",
   cci_score                 = "Charlson Comorbidity Index (continuous)",
+  has_gerd_any              = "GERD (all)",
   has_gerd_no_eso           = "GERD without oesophagitis",
   has_esophagitis           = "Oesophagitis",
   has_pud                   = "Peptic ulcer disease",
@@ -255,6 +314,7 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
     }
     df
   }
+  df <- pick("has_gerd_any")
   df <- pick("has_gerd_no_eso")
   df <- pick("has_esophagitis")
   message("Primary outcome definition: ", primary,
@@ -268,25 +328,40 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
 # ==============================================================================
 # 2b) build_gerd_outcomes(): both phenotypes x both case definitions, from one pull
 # ==============================================================================
-# Returns one row per person with:
+# Returns one row per person with, for each of the three phenotypes, an "_ever"
+# and a "_post_fitbit" column:
+#   has_gerd_any_ever    / has_gerd_any_post_fitbit
 #   has_gerd_no_eso_ever / has_gerd_no_eso_post_fitbit
 #   has_esophagitis_ever / has_esophagitis_post_fitbit
+#
 # "ever"        = >=2 qualifying condition records at any time
 # "post_fitbit" = >=2 records AND first record >= lag_days after the first Fitbit
 #                 record (the rule used by the published IBS paper)
 #
-# Takes TWO separate pulls, one per phenotype. Each file is already restricted to
-# its own descendant-expanded concept set, so membership is determined purely by
-# which file a record came from -- no concept-ID re-filtering (which would drop
+# Takes TWO pulls, one per concept set. Membership is determined purely by which
+# file a record came from -- no concept-ID re-filtering (which would drop
 # descendant-coded cases) and no concept-name matching.
 #
-#   gerd_no_eso_df  : R9_gerd_no_eso_outcome.rds   (seed 4144111)
-#   esophagitis_df  : R9_esophagitis_outcome.rds   (seed 30753)
+#   gerd_all_df     : R9_gerd_all_outcome.rds      (seed 318800, descendants)
+#   esophagitis_df  : R9_esophagitis_outcome.rds   (seed 30753,  descendants)
 #   first_fitbit_df : one row per person with the anchoring first Fitbit date
 #   fitbit_date_col : name of that date column (e.g. "first_fitbit_sleep_date")
-build_gerd_outcomes <- function(gerd_no_eso_df, esophagitis_df,
+#
+# THE EXCLUSION. has_gerd_no_eso is NOT a separate pull. It is the GERD group
+# minus anyone carrying oesophagitis, applied at the PERSON level and to the
+# whole record history -- not just to records meeting the >=2 rule, and not just
+# to records after the Fitbit anchor. Someone with a single oesophagitis code ten
+# years ago is not "GERD without oesophagitis". That threshold is
+# GERD_ESO_EXCLUSION_MIN_RECORDS (default 1 = any record).
+#
+# Consequence worth stating in the methods: the exclusion is applied to
+# has_gerd_no_eso under BOTH case definitions, so the post-Fitbit variant is
+# "GERD diagnosed >=180 days after Fitbit start, in someone with no oesophagitis
+# code at any point in their record".
+build_gerd_outcomes <- function(gerd_all_df, esophagitis_df,
                                 first_fitbit_df, fitbit_date_col,
-                                lag_days = GERD_POST_FITBIT_LAG_DAYS) {
+                                lag_days = GERD_POST_FITBIT_LAG_DAYS,
+                                eso_exclusion_min = GERD_ESO_EXCLUSION_MIN_RECORDS) {
   stopifnot(fitbit_date_col %in% names(first_fitbit_df))
 
   ff <- first_fitbit_df %>%
@@ -316,8 +391,9 @@ build_gerd_outcomes <- function(gerd_no_eso_df, esophagitis_df,
     dplyr::full_join(ever, post, by = "person_id")
   }
 
-  g <- mk(prep(gerd_no_eso_df), "has_gerd_no_eso_ever", "has_gerd_no_eso_post_fitbit")
-  e <- mk(prep(esophagitis_df), "has_esophagitis_ever", "has_esophagitis_post_fitbit")
+  gp <- prep(gerd_all_df); ep <- prep(esophagitis_df)
+  g <- mk(gp, "has_gerd_any_ever",    "has_gerd_any_post_fitbit")
+  e <- mk(ep, "has_esophagitis_ever", "has_esophagitis_post_fitbit")
 
   out <- if (is.null(g)) e else if (is.null(e)) g else
     dplyr::full_join(g, e, by = "person_id")
@@ -325,16 +401,37 @@ build_gerd_outcomes <- function(gerd_no_eso_df, esophagitis_df,
   out <- out %>% dplyr::mutate(dplyr::across(-person_id, ~tidyr::replace_na(.x, FALSE)))
 
   # Guarantee both phenotype blocks exist even if one pull was unavailable.
-  for (v in c("has_gerd_no_eso_ever","has_gerd_no_eso_post_fitbit",
+  for (v in c("has_gerd_any_ever","has_gerd_any_post_fitbit",
               "has_esophagitis_ever","has_esophagitis_post_fitbit"))
     if (!v %in% names(out)) { out[[v]] <- FALSE; message("  [note] ", v, " unavailable -> FALSE") }
 
+  # --- the exclusion ----------------------------------------------------------
+  eso_ids <- if (is.null(ep) || nrow(ep) == 0) integer(0) else
+    ep %>% dplyr::count(person_id) %>%
+      dplyr::filter(n >= eso_exclusion_min) %>% dplyr::pull(person_id)
+  excluded <- out$person_id %in% eso_ids
+  out$has_gerd_no_eso_ever        <- out$has_gerd_any_ever        & !excluded
+  out$has_gerd_no_eso_post_fitbit <- out$has_gerd_any_post_fitbit & !excluded
+  # Carried into the modelling frame so the gerd_no_eso analysis can DROP these
+  # participants rather than silently reclassify them as controls.
+  out$has_eso_any_record <- excluded
+
+  n_overlap_ever <- sum(out$has_gerd_any_ever & out$has_esophagitis_ever)
   cat("build_gerd_outcomes():",
+      "\n  GERD (all)                 ever =", sum(out$has_gerd_any_ever),
+      "| post-Fitbit =", sum(out$has_gerd_any_post_fitbit),
       "\n  GERD without oesophagitis  ever =", sum(out$has_gerd_no_eso_ever),
       "| post-Fitbit =", sum(out$has_gerd_no_eso_post_fitbit),
       "\n  Oesophagitis               ever =", sum(out$has_esophagitis_ever),
       "| post-Fitbit =", sum(out$has_esophagitis_post_fitbit),
-      "\n  Carry BOTH (ever):", sum(out$has_gerd_no_eso_ever & out$has_esophagitis_ever), "\n")
+      "\n  Removed from the GERD group for carrying >=", eso_exclusion_min,
+      " oesophagitis record(s):", sum(out$has_gerd_any_ever & excluded),
+      "\n  GERD and oesophagitis cases overlapping (ever):", n_overlap_ever, "\n")
+  if (sum(out$has_gerd_any_ever) > 0 &&
+      sum(out$has_gerd_no_eso_ever) / sum(out$has_gerd_any_ever) < 0.25)
+    message("  [check] the exclusion removed >75% of the GERD group. Worth ",
+            "confirming the oesophagitis concept set is not over-broad ",
+            "(descendants of 30753 include eosinophilic and infectious causes).")
   out
 }
 
@@ -368,12 +465,17 @@ quartile_cutoff_table <- function(df, exposures) {
 
 # Relabel quartile factors in-place with cutoff labels (for Table 2 display).
 # Accepts quartiles stored either as integers 1..4 or as factors Q1..Q4.
-label_quartiles_with_cutoffs <- function(df, exposures) {
+# cutoff_ref: the frame the quartile BOUNDARIES are computed from. It must be the
+# frame ntile() was applied to -- the full eligible cohort -- even when `df` is a
+# per-outcome restricted sample. Computing the boundaries from the restricted
+# sample would print numbers that do not match the Q1..Q4 assignment.
+label_quartiles_with_cutoffs <- function(df, exposures, cutoff_ref = df) {
   for (e in intersect(exposures, names(df))) {
     src <- GERD_EXPOSURE_SOURCE[[e]]
     if (is.null(src) || !src %in% names(df)) next
     sc <- if (e %in% names(GERD_EXPOSURE_SCALE)) GERD_EXPOSURE_SCALE[[e]] else 1
-    labs <- make_quartile_labels(df[[src]], scale = sc, digits = 0)
+    ref <- if (src %in% names(cutoff_ref)) cutoff_ref[[src]] else df[[src]]
+    labs <- make_quartile_labels(ref, scale = sc, digits = 0)
     v <- df[[e]]
     idx <- if (is.factor(v)) as.integer(v) else suppressWarnings(as.integer(as.character(v)))
     df[[e]] <- factor(idx, levels = 1:4, labels = labs)
@@ -456,18 +558,44 @@ prep_modeling_df <- function(df, exposures) {
       levels = c("Less than $50k","$50k to $150k","$150k or more","Unknown/Missing"))
 
   # --- behavioral -------------------------------------------------------------
-  if (!has("alcohol_likert_collapsed") && has("alcohol_likert_final"))
+  # Unrecognised codings become "Unknown/Missing" rather than NA. NA here is
+  # lethal: every model drop_na()s its covariates, so one unexpected value in
+  # alcohol or smoking silently empties the analysis sample and the run dies
+  # much later with an opaque "nrow(d) > 0 is not TRUE".
+  if (!has("alcohol_likert_collapsed") && has("alcohol_likert_final")) {
+    .a <- suppressWarnings(as.numeric(as.character(d$alcohol_likert_final)))
     d$alcohol_likert_collapsed <- factor(dplyr::case_when(
-      d$alcohol_likert_final == 0 ~ "0 drinks per day",
-      d$alcohol_likert_final == 1 ~ "1-2 drinks per day",
-      d$alcohol_likert_final == 2 ~ "3-4 drinks per day",
-      d$alcohol_likert_final %in% c(3,4,5) ~ ">=5 drinks per day",
-      TRUE ~ NA_character_),
-      levels = c("0 drinks per day","1-2 drinks per day","3-4 drinks per day",">=5 drinks per day"))
+      .a == 0 ~ "0 drinks per day",
+      .a == 1 ~ "1-2 drinks per day",
+      .a == 2 ~ "3-4 drinks per day",
+      .a %in% c(3,4,5) ~ ">=5 drinks per day",
+      TRUE ~ "Unknown/Missing"),
+      levels = c("0 drinks per day","1-2 drinks per day","3-4 drinks per day",
+                 ">=5 drinks per day","Unknown/Missing"))
+    if (all(d$alcohol_likert_collapsed == "Unknown/Missing"))
+      warning("alcohol_likert_final was not on the expected 0-5 scale -- alcohol ",
+              "is 'Unknown/Missing' for everyone and drops out of the models. ",
+              "Observed values: ",
+              paste(utils::head(unique(as.character(d$alcohol_likert_final)), 8),
+                    collapse = ", "), call. = FALSE)
+  }
 
-  if (has("smoking_binary") && !is.factor(d$smoking_binary))
-    d$smoking_binary <- factor(d$smoking_binary, levels = c(0,1),
-                               labels = c("Non-smoker","Smoker"))
+  if (has("smoking_binary") && !is.factor(d$smoking_binary)) {
+    .s <- tolower(trimws(as.character(d$smoking_binary)))
+    d$smoking_binary <- factor(dplyr::case_when(
+      .s %in% c("0","false","never","non-smoker","no")   ~ "Non-smoker",
+      .s %in% c("1","true","ever","smoker","yes","current","former") ~ "Smoker",
+      TRUE ~ "Unknown/Missing"),
+      levels = c("Non-smoker","Smoker","Unknown/Missing"))
+    if (all(d$smoking_binary == "Unknown/Missing"))
+      warning("smoking_binary was not on a recognised scale -- it is ",
+              "'Unknown/Missing' for everyone. Observed values: ",
+              paste(utils::head(unique(.s), 8), collapse = ", "), call. = FALSE)
+  }
+  # A single-level factor cannot be a model term; drop it explicitly so the
+  # separation guard reports it instead of glm() failing on a contrast error.
+  for (.v in c("alcohol_likert_collapsed", "smoking_binary"))
+    if (has(.v) && is.factor(d[[.v]])) d[[.v]] <- droplevels(d[[.v]])
 
   if (has("age_cat")) d$age_cat <- forcats::fct_relevel(factor(d$age_cat), "<30")
 
@@ -525,8 +653,9 @@ manuscript_table1 <- function(df, outcome_col, outcome_labels, file_stub = NULL)
 # 6) TABLE 2 -- exposure metrics by outcome group (average + labeled quartiles)
 # ==============================================================================
 manuscript_table2 <- function(df, outcome_col, outcome_labels, exposures,
-                              coverage_var = NULL, file_stub = NULL) {
-  d <- label_quartiles_with_cutoffs(df, exposures)
+                              coverage_var = NULL, file_stub = NULL,
+                              cutoff_ref = df) {
+  d <- label_quartiles_with_cutoffs(df, exposures, cutoff_ref = cutoff_ref)
   d <- .factor_outcome(d, outcome_col, outcome_labels)
 
   # Interleave: coverage, then for each exposure the continuous average followed
@@ -571,7 +700,7 @@ manuscript_table2 <- function(df, outcome_col, outcome_labels, exposures,
     out <- .mkdir_out()
     utils::write.csv(gtsummary::as_tibble(tbl),
                      file.path(out, paste0(file_stub, "_table2.csv")), row.names = FALSE)
-    utils::write.csv(quartile_cutoff_table(df, exposures),
+    utils::write.csv(quartile_cutoff_table(cutoff_ref, exposures),
                      file.path(out, paste0(file_stub, "_quartile_cutoffs.csv")), row.names = FALSE)
   }
   tbl
@@ -693,8 +822,23 @@ run_models_for_outcome <- function(df, outcome_col, outcome_labels, exposures,
 
   fit_one <- function(exposure) {
     keep <- unique(c(outcome_col, exposure, covars))
-    d <- d0 %>% dplyr::select(dplyr::all_of(keep)) %>% tidyr::drop_na()
-    stopifnot(nrow(d) > 0)
+    d <- d0 %>% dplyr::select(dplyr::all_of(keep))
+    # Name the culprit before drop_na() empties the frame. A covariate that is
+    # entirely NA is almost always a source file whose coding did not match, and
+    # the bare "nrow(d) > 0 is not TRUE" that used to appear here said nothing
+    # about which column caused it.
+    .allna <- keep[vapply(keep, function(k) all(is.na(d[[k]])), logical(1))]
+    if (length(.allna))
+      stop("Cannot model ", outcome_col, " ~ ", exposure, ": these columns are ",
+           "entirely missing -- ", paste(.allna, collapse = ", "),
+           ". Check the source file that supplies them.", call. = FALSE)
+    d <- tidyr::drop_na(d)
+    if (nrow(d) == 0)
+      stop("Cannot model ", outcome_col, " ~ ", exposure, ": no participant has a ",
+           "complete set of covariates. Per-column missingness: ",
+           paste(sprintf("%s=%.0f%%", keep,
+                         100 * vapply(keep, function(k) mean(is.na(d0[[k]])), numeric(1))),
+                 collapse = ", "), call. = FALSE)
 
     # Guard against separation from ultra-rare covariates before fitting.
     guard <- drop_unstable_covariates(d, outcome_col, covars,
@@ -941,13 +1085,23 @@ analyze_all_outcomes <- function(modeling_df, exposures,
                                  covars = GERD_ADJ_COVARS, cci_label = GERD_CCI_LABEL,
                                  coverage_var = NULL, stub = "gerd") {
   out <- list()
-  for (onm in names(GERD_OUTCOMES)) {
+  for (onm in intersect(names(GERD_OUTCOMES), GERD_RUN_OUTCOMES)) {
     oc <- GERD_OUTCOMES[[onm]]
     if (!oc$col %in% names(modeling_df)) next
 
+    # Per-outcome sample restriction (see GERD_OUTCOMES). Quartile cutoffs were
+    # fixed on the full eligible cohort upstream and are deliberately NOT
+    # recomputed here, so Q1..Q4 mean the same thing across all three outcomes.
+    df_o <- modeling_df
+    if (is.function(oc$restrict)) {
+      df_o <- oc$restrict(df_o)
+      cat("\n[sample] ", onm, ": ", nrow(df_o), " of ", nrow(modeling_df),
+          " participants (", oc$restrict_note %||% "restricted", ")\n", sep = "")
+    }
+
     # An outcome with (almost) no cases cannot be modelled. Say so plainly and
     # move on, rather than failing later inside the table builders.
-    .y  <- modeling_df[[oc$col]]
+    .y  <- df_o[[oc$col]]
     .nc <- sum(.y %in% TRUE, na.rm = TRUE)
     if (.nc < GERD_MIN_CASES) {
       cat("\n\n### SKIPPING OUTCOME:", oc$col, "-- only", .nc,
@@ -961,25 +1115,28 @@ analyze_all_outcomes <- function(modeling_df, exposures,
     fs <- paste0(stub, "_", onm)
     cat("\n\n##################################################################\n")
     cat("### OUTCOME:", oc$col, "(", oc$labels[2], ")  [", fs, "]\n")
+    cat("###", .nc, "cases /", nrow(df_o), "participants\n")
     cat("##################################################################\n")
 
-    t1  <- manuscript_table1(modeling_df, oc$col, oc$labels, file_stub = fs)
+    t1  <- manuscript_table1(df_o, oc$col, oc$labels, file_stub = fs)
     print(t1)
-    t2  <- manuscript_table2(modeling_df, oc$col, oc$labels, exposures,
-                             coverage_var = coverage_var, file_stub = fs)
+    t2  <- manuscript_table2(df_o, oc$col, oc$labels, exposures,
+                             coverage_var = coverage_var, file_stub = fs,
+                             cutoff_ref = modeling_df)
     print(t2)
-    s1  <- manuscript_supp_univariate(modeling_df, oc$col, oc$labels, exposures, file_stub = fs)
-    res <- run_models_for_outcome(modeling_df, oc$col, oc$labels, exposures, covars, cci_label,
+    s1  <- manuscript_supp_univariate(df_o, oc$col, oc$labels, exposures, file_stub = fs)
+    res <- run_models_for_outcome(df_o, oc$col, oc$labels, exposures, covars, cci_label,
                                   caption_prefix = oc$labels[2])
-    s2  <- manuscript_supp_multivariable(res, modeling_df, exposures, file_stub = fs)
+    s2  <- manuscript_supp_multivariable(res, df_o, exposures, file_stub = fs)
     f1  <- forest_plot_exposures(res, title = paste("Adjusted odds ratios:", oc$labels[2]),
                                  file_stub = fs)
     f2  <- gvif_plot(res, file_stub = fs)
-    dg  <- diagnostics_summary(res, modeling_df, oc$col, covars, file_stub = fs)
+    dg  <- diagnostics_summary(res, df_o, oc$col, covars, file_stub = fs)
 
     out[[onm]] <- list(table1 = t1, table2 = t2, supp_univariate = s1,
                        models = res, supp_multivariable = s2,
-                       figure1 = f1, figure2 = f2, diagnostics = dg)
+                       figure1 = f1, figure2 = f2, diagnostics = dg,
+                       n_analysed = nrow(df_o), n_cases = .nc)
   }
   cat("\nManuscript outputs written to: ", normalizePath(GERD_OUTPUT_DIR, mustWork = FALSE), "\n", sep = "")
   out
@@ -987,5 +1144,5 @@ analyze_all_outcomes <- function(modeling_df, exposures,
 
 message("GERD Analysis Helpers R9 loaded | primary outcome def: ", GERD_PRIMARY_DEF,
         " | p-adjust: ", GERD_P_ADJUST, " | ",
-        length(GERD_OUTCOMES), " outcomes, ",
+        length(intersect(names(GERD_OUTCOMES), GERD_RUN_OUTCOMES)), " outcomes, ",
         length(SLEEP_EXPOSURES), " sleep + ", length(ACTIVITY_EXPOSURES), " activity exposures.")

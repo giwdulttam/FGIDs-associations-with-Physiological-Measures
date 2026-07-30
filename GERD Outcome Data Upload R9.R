@@ -5,10 +5,18 @@
 # Description: BigQuery pulls of the TWO outcome phenotypes for the GERD study,
 #              for all participants who shared Fitbit data.
 #
-#                (1) GERD WITHOUT oesophagitis   seed concept 4144111
-#                    -> R9_gerd_no_eso_outcome.rds
-#                (2) Oesophagitis                seed concept 30753
+#                (1) GERD (all)      seed concept 318800  (SNOMED 235595009)
+#                    -> R9_gerd_all_outcome.rds
+#                (2) Oesophagitis    seed concept 30753   (SNOMED 16761005)
 #                    -> R9_esophagitis_outcome.rds
+#
+# WHICH PULL SHOULD I RUN?
+#   Use "GERD_PULL_OUTCOMES_BIGQUERY.R" instead of this file. It queries the
+#   BigQuery dataset attached to THIS workspace as a Resource, and downloads the
+#   rows directly. This file exports via Cloud Storage against the All of Us
+#   production CDR, which sits outside the workspace's VPC Service Controls
+#   perimeter -- that is what produced the [policyViolation] errors. It is kept
+#   for workspaces that still have classic AoU BigQuery access.
 #
 #              These are TWO SEPARATE pulls, each descendant-expanded from its own
 #              seed. They are deliberately NOT combined into one file: keeping them
@@ -17,16 +25,16 @@
 #              would silently drop descendant-coded cases) and no reliance on
 #              matching concept names.
 #
-#              NOTE ON DESIGN CHANGE: earlier versions of this study used a single
-#              broad-GERD pull (seed 318800) and carved out an oesophagitis subset
-#              by concept-name matching, which made the two outcomes NESTED. With
-#              the seeds below the two outcomes are PARALLEL phenotypes:
-#              non-erosive reflux disease versus oesophagitis. A participant can
-#              carry codes from both, so they are not mutually exclusive, but
-#              neither is a subset of the other.
+#              NOTE ON DESIGN CHANGE: an intermediate version used the narrow
+#              concept 4144111 ("GERD without esophagitis") as a standalone
+#              phenotype. Checking the cohort in the Cohort Builder showed heavy
+#              overlap between 4144111 and oesophagitis, so it does not identify a
+#              non-oesophagitic group. "GERD without oesophagitis" is now derived
+#              downstream, in build_gerd_outcomes(), by removing anyone with an
+#              oesophagitis record from the broad GERD group.
 #
 # PRE-FLIGHT (in the AoU Cohort Builder, before a production run):
-#   * Confirm 4144111 is the intended "GERD without oesophagitis" standard concept.
+#   * Confirm 318800 is the intended broad "Gastroesophageal reflux disease" concept.
 #   * Confirm the descendant set of 30753 ("Oesophagitis") matches the intended
 #     clinical scope. Its descendants may include NON-reflux oesophagitis
 #     (eosinophilic, infectious, pill-induced, radiation). If the study intends
@@ -47,8 +55,8 @@ library(bigrquery)
 # ==============================================================================
 # Seed concepts -- edit here if the Cohort Builder shows a different scope
 # ==============================================================================
-GERD_NO_ESO_SEEDS <- c(4144111)   # Gastroesophageal reflux disease without oesophagitis
-ESOPHAGITIS_SEEDS <- c(30753)     # Oesophagitis
+GERD_ALL_SEEDS    <- c(318800)   # Gastroesophageal reflux disease (SNOMED 235595009)
+ESOPHAGITIS_SEEDS <- c(30753)    # Oesophagitis                    (SNOMED 16761005)
 
 # ==============================================================================
 # Generic condition-domain pull with Cohort Builder descendant expansion
@@ -155,23 +163,23 @@ pull_condition_outcome <- function(seed_concepts, export_tag, out_rds, label) {
 # ==============================================================================
 # Run both pulls
 # ==============================================================================
-gerd_no_eso_df <- pull_condition_outcome(
-  GERD_NO_ESO_SEEDS, "condition_gerd_no_eso_r9",
-  "R9_gerd_no_eso_outcome.rds", "GERD without oesophagitis")
+gerd_all_df <- pull_condition_outcome(
+  GERD_ALL_SEEDS, "condition_gerd_all_r9",
+  "R9_gerd_all_outcome.rds", "GERD (all)")
 
 esophagitis_df <- pull_condition_outcome(
   ESOPHAGITIS_SEEDS, "condition_esophagitis_r9",
   "R9_esophagitis_outcome.rds", "Oesophagitis")
 
 # ==============================================================================
-# Overlap check -- the two phenotypes are parallel, not nested, but participants
-# may legitimately carry codes from both. Quantify that before analysis.
+# Overlap check. The overlap IS the quantity of interest: everyone in it is
+# removed from the GERD group to form "GERD without oesophagitis".
 # ==============================================================================
-a <- dplyr::distinct(gerd_no_eso_df, person_id)
+a <- dplyr::distinct(gerd_all_df, person_id)
 b <- dplyr::distinct(esophagitis_df, person_id)
 cat("\n=== Phenotype overlap (any record, before the >=2 rule) ===\n")
-cat("GERD without oesophagitis only:", nrow(dplyr::anti_join(a, b, by = "person_id")), "\n")
-cat("Oesophagitis only:             ", nrow(dplyr::anti_join(b, a, by = "person_id")), "\n")
-cat("Both:                          ", nrow(dplyr::inner_join(a, b, by = "person_id")), "\n")
+cat("GERD only (-> GERD without oesophagitis):", nrow(dplyr::anti_join(a, b, by = "person_id")), "\n")
+cat("Oesophagitis only:                       ", nrow(dplyr::anti_join(b, a, by = "person_id")), "\n")
+cat("Both (removed from the GERD group):      ", nrow(dplyr::inner_join(a, b, by = "person_id")), "\n")
 
 message("\nOutcome upload complete. Next: run any of the three analysis files.")
