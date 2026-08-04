@@ -1,119 +1,79 @@
 # How to Run the GERD Analysis
 
-Start here after restarting your R session.
+Two commands. Everything is built from the three Workbench datasets — nothing is
+read from `rds_backup`, so this cohort shares no denominator with the IBS paper.
 
 ---
 
-# What changed (read this first — 60 seconds)
+# The short version
 
-**1. The outcome definition changed**, following Ty's Cohort Builder check that
-4144111 overlaps heavily with oesophagitis.
-
-| | Concept | How it's defined |
-|---|---|---|
-| **GERD (all)** | `318800` (SNOMED 235595009) + descendants | ≥2 condition records |
-| **GERD without oesophagitis** | *derived* | GERD case with **no** oesophagitis record, ever |
-| **Oesophagitis** | `30753` (SNOMED 16761005) + descendants | ≥2 condition records |
-
-`4144111` is no longer a standalone phenotype. It's still recognised as a GERD
-code if it appears, but the non-oesophagitic group is now defined by **exclusion**
-from the broad group — which is what Ty proposed, and it's the right call.
-
-Two details worth knowing, because they're methods-section material:
-
-- Participants carrying **any** oesophagitis record are **dropped from the
-  `gerd_no_eso` analysis entirely** — not kept as controls. Leaving them in the
-  reference group would put acid-disease patients among the "healthy" and bias
-  the odds ratios toward the null.
-- Quartile cutoffs are fixed on the **full eligible cohort**, so Q1–Q4 mean the
-  same thing across all three outcomes and the estimates stay comparable.
-
-**2. The BigQuery problem is diagnosed.** The old pull queried
-`fc-aou-cdr-prod-ct.C2024Q3R9` — the All of Us production project, which is
-**outside** this workspace's VPC perimeter. That is what produced:
-
-```
-VPC Service Controls: Request is prohibited by organization's policy. [policyViolation]
-```
-
-Your workspace's **own** dataset (`C2025Q4R6`, listed under **Resources**) is
-**inside** the perimeter. The new pull queries that instead and downloads rows
-directly — no Cloud Storage export, one fewer perimeter crossing.
-
-**3. Ty is right that everything needed is already attached.** Under
-**Resources** you have the `C2025Q4R6` BigQuery dataset (with
-`condition_occurrence`), the `Controlled Data` cohort, and the migrated
-`rds_backup` bucket with all the Fitbit summaries. The merge is on `person_id`,
-and the code does it for you.
-
-> One thing that is **not** usable: the CSV your collaborator exported
-> (`..._data_person-000000000000.csv.gz`) is the **person** domain only —
-> demographics. It has no condition records, so it cannot supply the outcome.
-
----
-
-# Step 1 — Get the code
-
-**Terminal** tab:
+**Terminal:**
 
 ```bash
 cd ~/workspace && rm -rf gerd_code && git clone https://github.com/giwdulttam/FGIDs-associations-with-Physiological-Measures.git gerd_code
 ```
 
----
-
-# Step 2 — Run it
-
-**Console** tab:
+**Console — step 1, build the cohort (~1–3 hours):**
 
 ```r
+source("~/workspace/gerd_code/GERD Build Cohort From Export.R")
+```
+
+**Console — step 2, run the models (~30–60 min):**
+
+```r
+GERD_DATA_DIR <- "~/workspace/gerd_build"
 source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 ```
 
-One line. Nothing to edit. **30–60 minutes** (nine configurations now: three
-outcomes × three exposure sets).
+Results land in `~/workspace/gerd_build/manuscript_output/`.
 
-It finds your `.rds` files, fixes the locale, works out which BigQuery dataset it
-is allowed to query, pulls the two concept sets restricted to your Fitbit cohort,
-and runs all three analyses.
-
-**Watch for this line early on:**
-
-```
-route: existing | csv | bigquery | local
-```
-
-- `bigquery` — it queried `C2025Q4R6` directly. This is the one you want.
-- `csv` — it found a Cohort Builder export next to your data and used that. Also fine.
-- `existing` — outcome files were already on disk from a previous run.
-- `local` — **weakest**. It matched concept names inside your existing `.rds`
-  files. Fine for a dry run, not for the paper. Tell me if you see it.
+> **Do a dry run first.** Open `GERD Build Cohort From Export.R`, set
+> `GB_MAX_SHARDS <- 20`, and run step 1. It finishes in a few minutes and proves
+> the whole path works end to end. Set it back to `Inf` for the real run — the
+> script warns loudly that a capped run is a dry run, not final numbers.
 
 ---
 
-# Step 3 — If the BigQuery step can't find the dataset
+# What the build does
 
-Only needed if Step 2 stops with *"Could not work out which BigQuery dataset to
-query"* or a `[notFound]`.
+It reads the three Resources datasets and merges them on `person_id`:
 
-1. Workbench website → your workspace → **Resources**
-2. Click the **`C2025Q4R6`** BigQuery dataset
-3. Copy its cloud id from the **Details** panel — it looks like
-   `some-project-id.C2025Q4R6`
-4. In the Console:
+| Dataset | Supplies |
+|---|---|
+| `Demographic_and_Fitbit_Data` | Demographics; Fitbit sleep, steps, heart rate — **the exposures** |
+| `EHR_Data` | Conditions, procedures, drug exposures — **outcomes, comorbidities, medications** |
+| `Survery_Data` | Survey covariates and BMI |
 
-```r
-GERD_BQ_DATASET <- "PASTE-THE-ID-HERE"
-source("~/workspace/gerd_code/GERD_PULL_OUTCOMES_BIGQUERY.R")
+> The survey folder really is spelled `Survery_Data` in this workspace. The code
+> accepts either spelling and auto-detects it, so a rename won't break the run.
+
+It writes ~25 files into `~/workspace/gerd_build/` using the names the analysis
+already expects, so step 2 runs unmodified.
+
+## Two things the build has to work around
+
+**The pre-aggregated Fitbit tables are empty.** Every `minute_*` column in
+`sleepDailySummary` is NULL in this export, and `activitySummary`'s active-minute
+columns are too. But `sleepLevel` is fully populated, so the nightly metrics are
+rebuilt from it:
+
+```
+minute_asleep = asleep + deep + light + rem     (stages + classic logs)
+minute_awake  = awake + wake
+minute_in_bed = every level summed
 ```
 
-```r
-source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
-```
+Shards stream one at a time so the 6 GB table never has to fit in memory.
+
+**Wear time isn't a column.** It's recovered by summing `minute_in_zone` across
+heart-rate zones, so the ≥10-hour valid-day rule still applies. Heart-rate zone
+minutes also stand in for the empty active-minute columns — they're heart-rate
+based, not accelerometer based, and are labelled that way.
 
 ---
 
-# Step 4 — Get your results
+# Step 3 — Get your results
 
 ```r
 list.files(file.path(GERD_DATA_DIR, "manuscript_output"))
@@ -123,7 +83,11 @@ list.files(file.path(GERD_DATA_DIR, "manuscript_output"))
 read.csv(file.path(GERD_DATA_DIR, "manuscript_output", "sleep_gerd_any_table1.csv"), check.names = FALSE)
 ```
 
-Download: **Files** pane → `rds_backup` → `manuscript_output` → tick → **More** → **Export**.
+Download: **Files** pane → `gerd_build` → `manuscript_output` → tick → **More** → **Export**.
+
+Your CONSORT numbers are in `~/workspace/gerd_build/participant_flow.csv` —
+counts at every step from "has Fitbit data" through the exclusions, for both
+cohorts. Transcribe the flow figure from that rather than reconstructing it.
 
 ---
 ---
@@ -137,88 +101,97 @@ Nine sets of files — 3 outcomes × 3 exposure sets:
 | `sleep_gerd_any_*` | Sleep → GERD (all) |
 | `sleep_gerd_no_eso_*` | Sleep → GERD without oesophagitis |
 | `sleep_esophagitis_*` | Sleep → Oesophagitis |
-| `activity_gerd_any_*` | Activity → GERD (all) |
-| `activity_gerd_no_eso_*` | Activity → GERD without oesophagitis |
-| `activity_esophagitis_*` | Activity → Oesophagitis |
-| `combined_gerd_any_*` | Sleep + activity → GERD (all) |
-| `combined_gerd_no_eso_*` | Sleep + activity → GERD without oesophagitis |
-| `combined_esophagitis_*` | Sleep + activity → Oesophagitis |
+| `activity_*` | Same three, activity exposures |
+| `combined_*` | Same three, sleep + activity |
 
-Each set contains:
-
-| File | What it is |
-|---|---|
-| `*_table1.csv` | **Table 1** — demographics |
-| `*_table2.csv` | **Table 2** — metrics with quartile cutoffs |
-| `*_supp_table1_univariate.csv` | **Supplement Table 1** — unadjusted ORs |
-| `*_supp_table2_multivariable.csv` | **Supplement Table 2** — adjusted ORs |
-| `*_figure1_forest.png` | **Figure 1** — forest plots |
-| `*_figure2_gvif.png` | **Figure 2** — multicollinearity chart |
-| `*_diagnostics.csv` | Numbers for the model-assumptions paragraph |
-| `*_quartile_cutoffs.csv` | Exact quartile boundaries for the Table 2 footnote |
-
-Plus `combined_*_mutually_adjusted_pairs.csv` — sleep × activity pairs, each
+Each set contains Table 1, Table 2 (with quartile cutoffs), Supplement Tables 1–2,
+forest and GVIF figures, a diagnostics summary, and the exact quartile boundaries.
+`combined_*_mutually_adjusted_pairs.csv` adds sleep × activity pairs with each
 domain adjusted for the other.
 
-To run fewer configurations, edit `GERD_RUN_OUTCOMES` near the top of
-`GERD Analysis Helpers R9.R`.
+---
+
+# The models
+
+```
+logit P(outcome) ~ exposure quartile (Q1 reference)
+                 + age + sex + race + ethnicity + education + income
+                 + smoking + alcohol + BMI
+                 + sleep apnoea + sleep medication
+                 + depression + anxiety + diabetes + hypertension + PUD
+```
+
+**Outcomes** (`GERD Concepts R9.R`):
+
+| Outcome | Definition |
+|---|---|
+| `has_gerd_any` | GERD (`318800`), ≥2 records |
+| `has_gerd_no_eso` | GERD case with **no** oesophagitis record, ever |
+| `has_esophagitis` | Oesophagitis (`30753`) + erosive (`4231067`), ≥2 records |
+
+Barrett's (`443344`) is pulled as its own outcome file for the severity gradient
+GERD → oesophagitis → Barrett's.
+
+**Exclusions applied before modelling:**
+
+- Foregut surgery — myotomy (Heller, POEM, cricopharyngeal), fundoplication,
+  gastrectomy, bariatric surgery, oesophagectomy
+- Oesophageal and gastric cancer
+- Achalasia
+
+Oesophageal **dilation and bougienage are not excluded** — they treat a
+stricture, which is a consequence of reflux, so removing them would drop your
+most severe cases and bias toward the null. They're kept as covariates.
+
+To change any of this, edit `GERD Concepts R9.R` — every concept id lives there
+and nowhere else.
 
 ---
 
 # Lines worth reading in the output
 
-**How the outcome was built**
+**The concept dictionary**, printed at the top of the build — confirms which ids
+were used, which exclusions were applied, and what `on_sleep_med` contains.
+
+**Which procedures were excluded**, matched by name:
 
 ```
-descendant expansion: concept_ancestor (standard OMOP)
-GERD (all)   : 41234 records, 6120 participants
-Oesophagitis :  8802 records, 1455 participants
-Records in BOTH concept sets: 3311
+foregut-surgery exclusions: N people
+procedures matched by name:
+     nissen fundoplication (n)
+     peroral endoscopic myotomy of esophagus (n)
+procedures NOT excluded (retained, available as covariates):
+     dilation of esophagus
 ```
 
-If it says `NONE -- seed concepts only`, neither `concept_ancestor` nor
-`cb_criteria` was visible and only the two exact concepts were captured. Case
-counts will be too low — tell me.
+**Sleep reconstruction:**
 
-**Your case counts and the exclusion**
+```
+nightly rows: ... | people: ...
+participants with >=180 nights: ...
+```
+
+If "people" is near zero, `sleepLevel` didn't read — run
+`check_fitbit_data.R` and send me the output.
+
+**Case counts and the exclusion:**
 
 ```
 build_gerd_outcomes():
   GERD (all)                 ever = ... | post-Fitbit = ...
-  GERD without oesophagitis  ever = ... | post-Fitbit = ...
-  Oesophagitis               ever = ... | post-Fitbit = ...
-  Removed from the GERD group for carrying >= 1 oesophagitis record(s): ...
-  GERD and oesophagitis cases overlapping (ever): ...
+  GERD without oesophagitis  ever = ...
+  Removed from the GERD group for carrying >=1 oesophagitis record(s): ...
 ```
 
-That "Removed" line is the number Ty was describing. If the exclusion removes
-more than 75% of the GERD group, you'll get a `[check]` message — that would
-suggest the descendants of `30753` are catching non-reflux oesophagitis
-(eosinophilic, infectious, pill-induced, radiation), and we'd narrow the seed.
+A `[check]` message appears if the exclusion removes >75% of the GERD group —
+that would suggest the descendants of `30753` are catching non-reflux
+oesophagitis.
 
-**Per-outcome sample sizes**
-
-```
-[sample] gerd_no_eso: 19412 of 19995 participants (participants with any oesophagitis record removed)
-```
-
-**Your cohort size**
+**Per-outcome sample sizes:**
 
 ```
-Eligible sleep cohort N = 19995
+[sample] gerd_no_eso: N of M participants (participants with any oesophagitis record removed)
 ```
-
-Should match your published IBS paper.
-
-**Skipped outcomes / dropped covariates**
-
-```
-### SKIPPING OUTCOME: ... only N case(s)
-[sparsity guard] ... dropped N covariate(s)
-```
-
-Both are expected on rare outcomes and are reported deliberately. If the sparsity
-guard fires on a primary model, mention it in the manuscript methods.
 
 ---
 
@@ -226,52 +199,60 @@ guard fires on a primary model, mention it in the manuscript methods.
 
 | Message | What to do |
 |---|---|
-| `Could not work out which BigQuery dataset to query` | Do Step 3. |
-| `VPC Service Controls ... policyViolation` | The dataset it tried is outside the perimeter. Do Step 3 with the id from **Resources**. |
-| `is not visible from here` | Wrong dataset id — Step 3. |
-| `Could not find your .rds datasets` | Open `RUN_GERD_ANALYSIS.R`, set `GERD_DATA_DIR` at the top. |
-| `Could not find the GERD .R scripts` | Step 1 didn't finish — re-run it. |
-| `these columns are entirely missing -- ...` | The named source file's coding didn't match. Send me the line. |
-| `cannot open file 'R9_person_df.rds'` | You ran an analysis file directly. Use `RUN_GERD_ANALYSIS.R`. |
-| `Character set is not UTF-8` | Harmless — the runner sets a UTF-8 locale itself. |
+| `Folder not found: ~/workspace/Survery_Data` | Check the folder name in the Files pane and set `GB_DIRS` at the top of the build script. |
+| `No files matching 'sleepLevel'` | The Fitbit export is missing that table. Run `check_fitbit_data.R`. |
+| Build runs out of memory | Lower `GB_MAX_SHARDS`, run in pieces, or restart R first — the build needs a clean session. |
+| `these columns are entirely missing -- ...` | The named source didn't supply that covariate. Send me the line. |
+| `Could not find your .rds datasets` | Set `GERD_DATA_DIR <- "~/workspace/gerd_build"` **before** sourcing the runner. |
 | One analysis says `FAILED` | The others still ran. Send me the error above the summary. |
-| Out of memory | Edit `GERD_RUN` near the top of the runner to run one at a time. |
+| `Character set is not UTF-8` | Harmless — the runner sets a UTF-8 locale itself. |
 
-**To re-pull the outcome from scratch** (e.g. after changing a seed concept):
+**To rebuild from scratch:**
 
 ```r
-file.remove(file.path(GERD_DATA_DIR, c("R9_gerd_all_outcome.rds", "R9_esophagitis_outcome.rds")))
+unlink("~/workspace/gerd_build", recursive = TRUE)
 ```
 
 ---
 
-# To re-run later
+# Inspecting the data
 
-```bash
-cd ~/workspace/gerd_code && git pull
-```
+Fast schema dump of the three datasets (~2–3 min):
 
 ```r
-source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
+source("~/workspace/gerd_code/export_new_datasets_schema.R")
 ```
+
+Whether the Fitbit tables actually contain data:
+
+```r
+source("~/workspace/gerd_code/check_fitbit_data.R")
+```
+
+Both write markdown to `~/workspace/` and print to the console.
 
 ---
 
 # Before publishing
 
-1. **Verify the concept IDs** `318800` and `30753` in the Cohort Builder, and
-   check the participant counts against what the pull reports.
-2. **Check the oesophagitis scope.** Descendants of `30753` include non-reflux
-   causes — eosinophilic, infectious, pill-induced, radiation. As written the
-   outcome is "oesophagitis", not "reflux oesophagitis". This matters twice: it
-   defines the `esophagitis` outcome *and* it drives the exclusion that defines
-   `gerd_no_eso`. If the study means reflux oesophagitis only, narrow the seed in
-   `GERD_PULL_OUTCOMES_BIGQUERY.R` and re-run.
-3. **State the exclusion rule in the methods.** Currently: any oesophagitis
-   record at any time disqualifies a participant from the GERD-without-
-   oesophagitis analysis, and they are removed from the sample rather than
-   counted as controls. Change with `GERD_ESO_EXCLUSION_MIN_RECORDS` in
-   `GERD Analysis Helpers R9.R`.
-4. **If the run used `route: local`**, the outcome came from concept-name
-   matching over existing files, not a descendant expansion. Re-run via
-   `bigquery` or `csv` before quoting any number.
+1. **Supply a gastric-cancer concept id.** Only oesophageal (`4181343`) was
+   given. The build matches gastric cancer by name and says explicitly when no
+   such rows exist — if it says that, the exclusion was never applied and
+   `EHR_Data` needs re-exporting with that concept.
+2. **Confirm fundoplication should be excluded.** It's currently treated as
+   foregut surgery. It is anti-reflux rather than reflux-generating, so there's a
+   case for keeping those patients as a severe-GERD stratum instead. One line
+   with the expert settles it.
+3. **The comorbidity index is partial.** `cci_score` counts only the four
+   Charlson conditions in this concept set (CHF, COPD, T2DM, PUD). It is not a
+   validated Charlson Comorbidity Index and is labelled "Comorbidity index
+   (partial)" in every table — describe it that way in the methods.
+4. **Heart-rate zone minutes are not Fitbit active minutes.** They're a
+   heart-rate-based substitute for columns that are empty in this export. Worth
+   one methods sentence.
+5. **Check the oesophagitis scope.** Descendants of `30753` include
+   eosinophilic, infectious, pill-induced and radiation causes. This matters
+   twice — it defines the `esophagitis` outcome *and* drives the exclusion that
+   defines `gerd_no_eso`.
+
+Full methodological detail: `GERD_Study_Report.pdf`, sections A3 and A4.
