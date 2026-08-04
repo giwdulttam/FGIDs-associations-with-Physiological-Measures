@@ -194,8 +194,12 @@ GERD_BINARY_COVARS <- c(
   "has_pud", "has_ibs",
   "has_depression", "has_anxiety", "has_diabetes", "has_hypertension",
   "has_heart_failure", "has_mi", "has_stroke", "has_copd", "has_sleep_apnea",
+  "has_benign_esoph_neoplasm",
+  "on_sleep_med", "on_tricyclic", "on_benzo_hypnotic", "on_z_hypnotic",
+  "on_ppi", "on_h2ra",
   "on_beta_blocker", "on_calcium_blocker", "on_stimulants",
-  "on_antidepressants", "on_antipsychotics", "on_anxiolytics", "on_hypnotics"
+  "on_antidepressants", "on_antipsychotics", "on_anxiolytics", "on_hypnotics",
+  "proc_nissen", "proc_bariatric", "proc_esophagus", "proc_dilation"
 )
 
 # Covariates in Table 1, in the order the paper presents them.
@@ -203,7 +207,8 @@ GERD_TABLE1_VARS <- c(
   "age_at_fitbit_start", "age_cat", "median_bmi", "sex_birth_collapsed",
   "race_collapsed", "ethnicity_collapsed", "education_collapsed",
   "income_collapsed", "alcohol_likert_collapsed", "smoking_binary",
-  "cci_cat", "has_depression", "has_anxiety", "has_pud", "has_ibs"
+  "has_sleep_apnea", "on_sleep_med", "has_depression", "has_anxiety",
+  "has_diabetes", "has_hypertension", "has_pud", "cci_cat"
 )
 
 GERD_LABELS <- c(
@@ -251,9 +256,10 @@ GERD_LABELS <- c(
   alcohol_likert_collapsed  = "Alcohol use",
   alcohol_likert_final      = "Alcohol use (Likert)",
   smoking_binary            = "Smoking status",
-  cci_cat                   = "Charlson Comorbidity Index Score",
-  cci_score                 = "Charlson Comorbidity Index (continuous)",
+  cci_cat                   = "Comorbidity index (partial)",
+  cci_score                 = "Comorbidity count (partial, continuous)",
   has_gerd_any              = "GERD (all)",
+  has_barretts_outcome      = "Barrett's oesophagus",
   has_gerd_no_eso           = "GERD without oesophagitis",
   has_esophagitis           = "Oesophagitis",
   has_pud                   = "Peptic ulcer disease",
@@ -266,7 +272,19 @@ GERD_LABELS <- c(
   has_mi                    = "Myocardial infarction",
   has_stroke                = "Stroke",
   has_copd                  = "COPD",
-  has_sleep_apnea           = "Sleep apnea",
+  has_sleep_apnea           = "Obstructive sleep apnea",
+  has_benign_esoph_neoplasm = "Benign neoplasm of oesophagus",
+  on_sleep_med              = "Sleep medication (tricyclic or hypnotic)",
+  on_tricyclic              = "Tricyclic antidepressant",
+  on_benzo_hypnotic         = "Benzodiazepine hypnotic",
+  on_z_hypnotic             = "Non-benzodiazepine hypnotic",
+  on_ppi                    = "Proton pump inhibitor",
+  on_h2ra                   = "H2-receptor antagonist",
+  proc_nissen               = "Prior fundoplication",
+  proc_bariatric            = "Prior bariatric surgery",
+  proc_esophagus            = "Prior operation on oesophagus",
+  proc_dilation             = "Prior oesophageal dilation",
+  has_barretts              = "Barrett's oesophagus",
   on_beta_blocker           = "On beta blocker",
   on_calcium_blocker        = "On calcium blocker",
   on_stimulants             = "On stimulants",
@@ -278,21 +296,44 @@ GERD_LABELS <- c(
 
 .labs <- function(vars) as.list(GERD_LABELS[intersect(names(GERD_LABELS), vars)])
 
-# Adjustment set: matches the published paper (age, BMI, sex, race, ethnicity,
-# education, income, smoking, alcohol, CCI, depression, anxiety) PLUS the two
-# GERD-specific gastrointestinal covariates.
+# --- Adjustment set -------------------------------------------------------------
+# Revised on GERD expert review. Starts from the published paper's set (age, sex,
+# race, ethnicity, education, income, smoking, alcohol, BMI, depression, anxiety)
+# and adds the three the expert specifically required:
+#
+#   has_sleep_apnea  the dominant confounder of a sleep-GERD association --
+#                    apnoea causes BOTH fragmented sleep and reflux, so without
+#                    it the estimate partly reflects undiagnosed apnoea
+#   on_sleep_med     tricyclics and hypnotics alter sleep architecture AND
+#                    lower oesophageal sphincter tone, so an unadjusted model
+#                    attributes a drug effect to sleep itself
+#   has_diabetes,
+#   has_hypertension explicit rather than folded into a comorbidity index
+#
+# has_ibs is dropped: IBS is not in this workspace's concept set, so it was
+# FALSE for everyone and contributed nothing.
+#
+# The partial comorbidity count (cci_cat) is NO LONGER in the default set. It is
+# built from CHF, COPD, T2DM and PUD, so including it alongside has_diabetes and
+# has_pud double-counts them. Set GERD_USE_COMORBIDITY_INDEX <- TRUE to swap the
+# explicit flags for the index instead.
 GERD_ADJ_COVARS_BASE <- c(
   "age_cat", "sex_birth_collapsed", "race_collapsed", "ethnicity_collapsed",
   "education_collapsed", "income_collapsed",
   "alcohol_likert_collapsed", "smoking_binary",
   "median_bmi",
+  "has_sleep_apnea", "on_sleep_med",
   "has_depression", "has_anxiety",
-  "has_pud", "has_ibs"
+  "has_diabetes", "has_hypertension",
+  "has_pud"
 )
+GERD_USE_COMORBIDITY_INDEX <- FALSE
 GERD_CCI_COVARIATE <- "cci_cat"
-GERD_ADJ_COVARS <- c(GERD_ADJ_COVARS_BASE, GERD_CCI_COVARIATE)
+GERD_ADJ_COVARS <- if (GERD_USE_COMORBIDITY_INDEX)
+  c(setdiff(GERD_ADJ_COVARS_BASE, c("has_diabetes", "has_pud")), GERD_CCI_COVARIATE) else
+  GERD_ADJ_COVARS_BASE
 GERD_CCI_LABEL  <- if (GERD_CCI_COVARIATE == "cci_cat")
-  "Charlson Comorbidity Index Score" else "Charlson Comorbidity Index (continuous)"
+  "Comorbidity index (partial)" else "Comorbidity count (continuous)"
 
 # ==============================================================================
 # 2) Primary-outcome selection (paper-matching vs "ever")

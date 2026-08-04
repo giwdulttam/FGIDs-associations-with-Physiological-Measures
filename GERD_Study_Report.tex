@@ -194,8 +194,130 @@ perimeter), expands descendants through \code{concept_ancestor} with a
 and downloads directly --- removing the Cloud Storage hop entirely. The original
 script is retained for workspaces with classic All of Us BigQuery access.
 
-\subsection*{A3. Deliverables, as amended}
+\subsection*{A3. The data source changed: three Workbench datasets, merged on \texttt{person\_id}}
+The body of this report describes an analysis assembled from the project's
+pre-existing \code{.rds} objects in \code{rds\_backup} --- the same objects
+behind the published IBS paper. That is no longer the design. The study team
+exported three datasets to Workspace Resources, and the GERD analysis is built
+from those alone:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{9.5cm}@{}}
+\toprule
+\textbf{Dataset} & \textbf{Supplies} \\
+\midrule
+\code{Demographic\_and\_Fitbit\_Data} & Demographics; Fitbit sleep, steps and heart rate (the exposures) \\
+\code{EHR\_Data} & Conditions, procedures and drug exposures (the outcomes, comorbidities and medications) \\
+\code{Survery\_Data} & Survey covariates and BMI \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent All three carry \code{person\_id}, and the build merges on it. The
+crucial point is that \textbf{the GERD cohort is not the IBS cohort}: nothing is
+read from \code{rds\_backup}, so the two studies share no denominator and the
+GERD numbers cannot inherit an IBS-era eligibility decision.
+
+\paragraph{Two properties of the export that the build has to handle.}
+First, the Workbench applies a \code{T\_DISP\_} convention: a column \code{X}
+holds a coded value and \code{T\_DISP\_X} the readable text. Reading \code{X}
+where a name is expected silently yields concept ids. Second, the pre-aggregated
+Fitbit tables (\code{sleepDailySummary}, \code{activitySummary}) are entirely
+NULL in this export, while the underlying \code{sleepLevel} table is fully
+populated. The nightly sleep metrics are therefore reconstructed from
+\code{sleepLevel}:
+\[
+\text{minute\_asleep} = \text{asleep} + \text{deep} + \text{light} + \text{rem},
+\qquad
+\text{minute\_awake} = \text{awake} + \text{wake},
+\]
+with \code{minute\_in\_bed} the sum of every level. The first form covers
+stages-capable devices, the second the classic logs. Wear time, which the export
+has no column for, is recovered as the sum of \code{minute\_in\_zone} across
+heart-rate zones, so the $\geq 10$-hour valid-day rule still applies. Heart-rate
+zone minutes stand in for the empty active-minute columns; they are
+\emph{heart-rate} based rather than accelerometer based and are labelled as such.
+
+\subsection*{A4. Confounding control, revised on GERD expert review}
+A GERD expert reviewed the protocol and required three changes. All are
+implemented in \code{GERD Concepts R9.R} and \code{GERD Analysis Helpers R9.R}.
+
+\paragraph{(i) Sleep medication is now an adjustment variable.}
+Tricyclic antidepressants (amitriptyline, nortriptyline, doxepin and related)
+and hypnotics --- both benzodiazepine (triazolam/Halcion, temazepam) and
+non-benzodiazepine (zolpidem, eszopiclone) --- alter sleep duration and
+architecture \emph{and} several reduce lower oesophageal sphincter tone. Omitting
+them attributes a pharmacological effect to sleep itself. The covariate
+\code{on\_sleep\_med} is the union of the three classes; the components are
+retained so the composite is auditable and any one class can be modelled alone.
+
+\paragraph{(ii) Obstructive sleep apnoea is now an adjustment variable.}
+This is the dominant confounder of any sleep--reflux association. Apnoea causes
+both fragmented sleep and reflux, and it travels with obesity. An unadjusted
+estimate of "poor sleep $\rightarrow$ GERD" partly measures undiagnosed apnoea
+instead. \code{has\_sleep\_apnea} (concept 313459) enters every adjusted model.
+
+\paragraph{(iii) Foregut surgery and upper gastrointestinal cancer are exclusions.}
+A myotomy deliberately cuts the lower oesophageal sphincter, so reflux afterwards
+is produced \emph{by the operation}. Fundoplication, gastrectomy, bariatric
+surgery and oesophagectomy likewise change the anatomy that generates reflux.
+Oesophageal and gastric cancer alter eating, weight and sleep, produce
+reflux-like symptoms, and lead to major surgery. Neither group is comparable to
+the population this study is about, so both are removed rather than adjusted for.
+Achalasia is retained as an exclusion: it mimics reflux and is the indication for
+the myotomies above.
+
+Oesophageal dilation and bougienage are deliberately \emph{not} excluded. They
+treat a stricture, which is a consequence of reflux rather than a cause;
+excluding them would remove severe-reflux participants and bias the association
+towards the null. They are available as covariates.
+
+Concept ids exist for achalasia (318186), oesophageal malignancy (4181343),
+oesophagectomy (4187533) and gastrectomy (4203442). Heller myotomy, POEM and
+cricopharyngeal myotomy have no id in this workspace's concept set but appear by
+name in the procedure export, so exclusion matches on concept id where one
+exists and on name where it does not.
+
+\paragraph{The adjustment set, as revised.}
+\[
+\begin{aligned}
+\text{logit}\,\Pr(\text{outcome}) = \beta_0 &+ \beta_1 \text{Exposure quartile}
+ + \gamma_1 \text{age} + \gamma_2 \text{sex} + \gamma_3 \text{race} + \gamma_4 \text{ethnicity} \\
+ &+ \gamma_5 \text{education} + \gamma_6 \text{income}
+   + \gamma_7 \text{smoking} + \gamma_8 \text{alcohol} + \gamma_9 \text{BMI} \\
+ &+ \gamma_{10}\,\textbf{sleep apnoea} + \gamma_{11}\,\textbf{sleep medication} \\
+ &+ \gamma_{12} \text{depression} + \gamma_{13} \text{anxiety}
+   + \gamma_{14} \text{diabetes} + \gamma_{15} \text{hypertension}
+   + \gamma_{16} \text{peptic ulcer disease}
+\end{aligned}
+\]
+
+\noindent Two departures from the body of this report. \code{has\_ibs} is
+dropped: IBS is not in this workspace's concept set, so it was constant and
+contributed nothing. The comorbidity index is dropped from the default set: it
+is built from congestive heart failure, COPD, type 2 diabetes and peptic ulcer
+disease, so including it alongside \code{has\_diabetes} and \code{has\_pud}
+double-counts them. Diabetes and hypertension are adjusted for explicitly
+instead, which is both what the expert asked for and more interpretable.
+Setting \code{GERD\_USE\_COMORBIDITY\_INDEX <- TRUE} restores the index in place
+of the explicit flags. Note that the index available here is a \emph{partial}
+count over the four Charlson conditions present in this concept set --- it is
+not a validated Charlson Comorbidity Index and is labelled accordingly in every
+table.
+
+\paragraph{Participant flow.} The build writes \code{participant\_flow.csv}: the
+count at every step from "has Fitbit data" through the exposure minimum, EHR
+sharing, the age threshold and the clinical exclusions, for both the sleep and
+activity cohorts. The manuscript's flow figure is transcribed from that file
+rather than reconstructed after the fact.
+
+\subsection*{A5. Deliverables, as amended}
 {\small\noindent
+\code{GERD Concepts R9.R},\;
+\code{GERD Build Cohort From Export.R},\;
+\code{export_new_datasets_schema.R},\;
+\code{check_fitbit_data.R},\;
 \code{GERD_PULL_OUTCOMES_BIGQUERY.R},\;
 \code{GERD Analysis Helpers R9.R},\;
 \code{GERD Data Prep R9.R},\;

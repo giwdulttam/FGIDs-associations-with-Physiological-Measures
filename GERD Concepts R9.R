@@ -40,22 +40,61 @@ GERD_OUTCOME_SETS <- list(
 GERD_BARRETTS_SET <- c(GERD_CX$barretts)
 
 # ==============================================================================
-# 2) EXCLUSIONS
+# 2) EXCLUSIONS  (per GERD expert review)
 # ==============================================================================
-# Conditions and operations that either mimic reflux or permanently alter the
-# anatomy that produces it. Someone who has had an oesophagectomy cannot develop
-# incident GERD in a meaningful sense, and achalasia produces regurgitation that
-# is routinely coded as reflux.
+# Two families, for two different reasons.
+#
+# (a) FOREGUT SURGERY. A myotomy, fundoplication, gastrectomy or bariatric
+#     procedure permanently changes the anatomy that generates reflux. Reflux
+#     after a Heller myotomy or POEM is caused BY the operation -- the lower
+#     oesophageal sphincter has been deliberately cut -- so those participants
+#     are not comparable to the general population and their reflux is not the
+#     outcome this study is about.
+#
+# (b) UPPER GI CANCER. Oesophageal and gastric cancer change eating, weight and
+#     sleep, produce reflux-like symptoms, and lead to major surgery. A
+#     fundamentally different disease process.
+#
+# Achalasia is retained as an exclusion: it mimics reflux, and it is the
+# indication for the myotomies above, so keeping it aligns the two families.
 #
 # Set GERD_APPLY_EXCLUSIONS <- FALSE to keep everyone and report these as
 # covariates instead.
 GERD_APPLY_EXCLUSIONS <- TRUE
+
 GERD_EXCLUSION_SETS <- list(
   achalasia            = 318186,    # motility disorder; mimics reflux
   esophageal_cancer    = 4181343,   # Malignant tumor of esophagus
   esophagectomy        = 4187533,
   gastrectomy          = 4203442
 )
+
+# Concept ids do not exist in this workspace's concept set for every operation
+# the expert named (Heller, POEM, cricopharyngeal myotomy). They ARE present by
+# name in the procedure export's T_DISP_standard_concept_name, so exclusion also
+# matches on name. Supply ids for any of these and they will be used in
+# preference -- an id match is exact, a name match is not.
+GERD_FOREGUT_SURGERY_RX <- paste(
+  "myotomy",                       # Heller, cricopharyngeal, oesophageal
+  "peroral endoscopic myotomy|poem",
+  "fundoplication",                # Nissen and partial wraps
+  "gastrectomy|sleeve resection of stomach|sleeve gastroplasty",
+  "bariatric|gastric bypass|roux-en-y",
+  "esophagectomy|esophagogastrostomy|esophagogastrectomy",
+  "pyloroplasty|cardiomyotomy",
+  sep = "|")
+
+# Reflux-generating or anatomy-altering procedures that are NOT excluded by the
+# pattern above, kept separate so the decision is visible rather than implied.
+# Dilation and bougienage treat strictures -- usually a CONSEQUENCE of reflux,
+# not a cause -- so they are covariates, not exclusions.
+GERD_DILATION_RX <- "dilation of esophagus|bougienage|balloon dilation"
+
+# Upper GI malignancy. 4181343 (oesophageal) is confirmed present in the export.
+# A gastric-cancer concept id has not been supplied; the name pattern catches it
+# only if such rows are in the condition export at all.
+GERD_UPPER_GI_CANCER_RX <-
+  "malignant.*(esophag|oesophag|stomach|gastric)|(esophag|oesophag|stomach|gastric).*(carcinoma|malignan|cancer|adenocarcinoma)"
 
 # ==============================================================================
 # 3) COMORBIDITY COVARIATES  (condition domain)
@@ -146,6 +185,40 @@ GERD_SURVEY_MISSING <- c(903096,   # Skip
                          903087)   # Don't know
 
 # ==============================================================================
+# 5b) MEDICATION CLASSES  (RxNorm ingredient names)
+# ==============================================================================
+# Sleep medication is a confounder the expert specifically called out: these
+# drugs change sleep duration and architecture AND several relax the lower
+# oesophageal sphincter. Without adjustment, a drug effect is attributed to
+# sleep itself.
+#
+# on_sleep_med is the union of the three classes below and is what enters the
+# adjustment set; the components are kept so a reviewer can see what it contains
+# and so any one class can be modelled separately.
+GERD_MED_RX <- list(
+  # Tricyclics -- named by the expert. Anticholinergic, delay gastric emptying
+  # and lower sphincter pressure, and are prescribed at low dose for sleep.
+  on_tricyclic      = "amitriptyline|nortriptyline|doxepin|imipramine|desipramine|clomipramine|trimipramine|protriptyline|amoxapine",
+  # Benzodiazepine hypnotics -- "helsion" in the expert's notes is Halcion,
+  # i.e. triazolam.
+  on_benzo_hypnotic = "triazolam|temazepam|flurazepam|estazolam|quazepam",
+  # Non-benzodiazepine hypnotics and orexin antagonists.
+  on_z_hypnotic     = "zolpidem|eszopiclone|zaleplon|suvorexant|lemborexant|ramelteon|doxylamine",
+
+  # Not sleep medication, but adjusted for in the published template.
+  on_ppi            = "omeprazole|pantoprazole|esomeprazole|lansoprazole|rabeprazole|dexlansoprazole",
+  on_h2ra           = "famotidine|ranitidine|cimetidine|nizatidine",
+  on_beta_blocker   = "metoprolol|atenolol|propranolol|carvedilol|bisoprolol|nadolol|labetalol",
+  on_calcium_blocker= "amlodipine|diltiazem|verapamil|nifedipine|felodipine|nicardipine",
+  on_stimulants     = "methylphenidate|amphetamine|lisdexamfetamine|modafinil|armodafinil",
+  on_antidepressants= "sertraline|fluoxetine|citalopram|escitalopram|paroxetine|venlafaxine|duloxetine|bupropion|trazodone|mirtazapine",
+  on_antipsychotics = "quetiapine|risperidone|olanzapine|aripiprazole|haloperidol|ziprasidone",
+  on_anxiolytics    = "alprazolam|lorazepam|clonazepam|diazepam|buspirone|chlordiazepoxide"
+)
+# Components combined into the single sleep-medication covariate.
+GERD_SLEEP_MED_COMPONENTS <- c("on_tricyclic", "on_benzo_hypnotic", "on_z_hypnotic")
+
+# ==============================================================================
 # 6) Name patterns -- only used when a concept id match is impossible
 # ==============================================================================
 GERD_NAME_PATTERNS <- list(
@@ -174,7 +247,14 @@ gerd_concept_report <- function() {
   cat("Exclusions", if (GERD_APPLY_EXCLUSIONS) "(APPLIED)" else "(reported only)", ":\n")
   for (n in names(GERD_EXCLUSION_SETS))
     cat("  ", n, ": ", paste(GERD_EXCLUSION_SETS[[n]], collapse = ", "), "\n", sep = "")
+  cat("  foregut surgery (by name): myotomy / Heller / POEM / fundoplication /\n")
+  cat("      gastrectomy / bariatric / oesophagectomy\n")
+  cat("  upper GI cancer (by name): oesophageal or gastric malignancy\n")
+  cat("  NOT excluded: oesophageal dilation and bougienage -- these treat a\n")
+  cat("      stricture, which is a consequence of reflux rather than a cause\n")
   cat("Comorbidity covariates: ", length(GERD_COMORBID_SETS), "\n", sep = "")
+  cat("Sleep-medication covariate on_sleep_med = ",
+      paste(GERD_SLEEP_MED_COMPONENTS, collapse = " OR "), "\n", sep = "")
   cat("Procedure covariates  : ", length(GERD_PROCEDURE_SETS),
       if (GERD_PROCEDURES_IN_ADJUSTMENT) " (in adjustment set)"
       else " (reported, NOT adjusted for)", "\n", sep = "")

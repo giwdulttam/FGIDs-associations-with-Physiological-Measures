@@ -1,3 +1,10 @@
 
 # Unrelated vendored repo, kept locally only
 Dynamic-DeepHit/
+
+# LaTeX build artifacts
+*.aux
+*.toc
+*.out
+*.synctex.gz
+GERD_Study_Report.log

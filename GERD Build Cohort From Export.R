@@ -329,6 +329,18 @@ gb_save(comorb[, c("person_id", "has_pud")], "R9_pud_status.rds")
 
 excl_cond <- unique(unlist(lapply(GERD_EXCLUSION_SETS[c("achalasia","esophageal_cancer")],
                                   flag_ids)))
+# Gastric cancer has no concept id in this workspace's set, so it is caught by
+# name if such rows are present at all.
+.cancer_nm <- unique(cond$person_id[grepl(GERD_UPPER_GI_CANCER_RX,
+                                          tolower(cond$standard_concept_name))])
+if (length(setdiff(.cancer_nm, excl_cond)))
+  gb_say("   upper-GI cancer matched by NAME but not by id: ",
+         length(setdiff(.cancer_nm, excl_cond)), " people")
+excl_cond <- unique(c(excl_cond, .cancer_nm))
+if (!any(grepl("stomach|gastric", tolower(cond$standard_concept_name))))
+  gb_say("   NOTE: no gastric-cancer rows found. If the EHR export was built ",
+         "without a gastric-cancer concept, that exclusion CANNOT be applied ",
+         "here -- supply the concept id and re-export.")
 
 # A partial Charlson: only the conditions in this concept set contribute, so it
 # is NOT a validated CCI. Named cci_score for pipeline compatibility and flagged
@@ -353,7 +365,8 @@ rm(cond); invisible(gc(verbose = FALSE))
 # ==============================================================================
 gb_say("[4/8] Procedures")
 proc <- tryCatch(gb_stream(gb_shards("ehr", "procedureOccurrence"),
-  cols = c("person_id", "procedure_concept_id", "procedure_datetime"),
+  cols = c("person_id", "procedure_concept_id", "procedure_datetime",
+           "standard_concept_name", "T_DISP_standard_concept_name"),
   label = "procedures",
   fn = function(d) d[d$procedure_concept_id %in% GERD_ALL_PROCEDURE_CONCEPTS, , drop = FALSE]),
   error = function(e) { gb_say("   (no procedure table: ", conditionMessage(e), ")"); NULL })
@@ -361,13 +374,37 @@ proc <- tryCatch(gb_stream(gb_shards("ehr", "procedureOccurrence"),
 procf <- data.frame(person_id = integer(0))
 excl_proc <- integer(0)
 if (!is.null(proc) && nrow(proc)) {
-  pid <- function(ids) unique(proc$person_id[proc$procedure_concept_id %in% ids])
+  proc$.nm <- tolower(as.character(gb_disp(proc, "standard_concept_name")))
+  pid  <- function(ids) unique(proc$person_id[proc$procedure_concept_id %in% ids])
+  pnm  <- function(rx)  unique(proc$person_id[grepl(rx, proc$.nm)])
   procf <- data.frame(person_id = unique(proc$person_id))
   for (nm in names(GERD_PROCEDURE_SETS))
     procf[[nm]] <- procf$person_id %in% pid(GERD_PROCEDURE_SETS[[nm]])
+  procf$proc_dilation <- procf$person_id %in% pnm(GERD_DILATION_RX)
+
+  # Foregut surgery: concept id where one exists, name where it does not. The
+  # expert named Heller, POEM and myotomy, which have no id in this concept set
+  # but are present by name in the procedure export.
   excl_proc <- unique(c(pid(GERD_EXCLUSION_SETS$esophagectomy),
-                        pid(GERD_EXCLUSION_SETS$gastrectomy)))
+                        pid(GERD_EXCLUSION_SETS$gastrectomy),
+                        pid(GERD_PROCEDURE_SETS$proc_nissen),
+                        pid(GERD_PROCEDURE_SETS$proc_bariatric),
+                        pnm(GERD_FOREGUT_SURGERY_RX)))
   gb_save(procf, "R9_procedure_flags.rds")
+  gb_say("   foregut-surgery exclusions: ", format(length(excl_proc), big.mark = ","),
+         " people")
+  .hit <- sort(table(proc$.nm[grepl(GERD_FOREGUT_SURGERY_RX, proc$.nm)]),
+               decreasing = TRUE)
+  if (length(.hit)) {
+    gb_say("   procedures matched by name:")
+    for (i in seq_len(min(15, length(.hit))))
+      cat("        ", names(.hit)[i], " (", .hit[i], ")\n", sep = "")
+  }
+  .kept <- sort(unique(proc$.nm[!grepl(GERD_FOREGUT_SURGERY_RX, proc$.nm)]))
+  if (length(.kept)) {
+    gb_say("   procedures NOT excluded (retained, available as covariates):")
+    for (v in utils::head(.kept, 15)) cat("        ", v, "\n", sep = "")
+  }
 }
 
 # ==============================================================================
@@ -443,17 +480,7 @@ gb_save(alc, "alcohol_summary_df.rds")
 # 7) MEDICATIONS -- by RxNorm ingredient name
 # ==============================================================================
 gb_say("[7/8] Medications")
-MED_RX <- list(
-  on_ppi            = "omeprazole|pantoprazole|esomeprazole|lansoprazole|rabeprazole|dexlansoprazole",
-  on_h2ra           = "famotidine|ranitidine|cimetidine|nizatidine",
-  on_beta_blocker   = "metoprolol|atenolol|propranolol|carvedilol|bisoprolol|nadolol|labetalol",
-  on_calcium_blocker= "amlodipine|diltiazem|verapamil|nifedipine|felodipine",
-  on_stimulants     = "methylphenidate|amphetamine|lisdexamfetamine|modafinil",
-  on_antidepressants= "sertraline|fluoxetine|citalopram|escitalopram|paroxetine|venlafaxine|duloxetine|bupropion|amitriptyline|nortriptyline|trazodone|mirtazapine",
-  on_antipsychotics = "quetiapine|risperidone|olanzapine|aripiprazole|haloperidol|ziprasidone",
-  on_anxiolytics    = "alprazolam|lorazepam|clonazepam|diazepam|buspirone",
-  on_hypnotics      = "zolpidem|eszopiclone|zaleplon|temazepam|suvorexant|ramelteon"
-)
+MED_RX <- GERD_MED_RX   # from GERD Concepts R9.R
 drug <- tryCatch(gb_stream(gb_shards("ehr", "ingredientOccurrence"),
   cols = c("person_id", "standard_concept_name", "T_DISP_standard_concept_name"),
   label = "drugs",
@@ -473,6 +500,15 @@ if (!is.null(drug) && nrow(drug)) {
   for (nm in names(MED_RX)) meds[[nm]] <- FALSE
   gb_say("   WARNING: no medication data -- all on_* flags are FALSE")
 }
+# The covariate the expert asked for: any tricyclic OR any hypnotic. Components
+# are kept alongside it so a reviewer can see what it is made of.
+meds$on_sleep_med <- Reduce(`|`, lapply(GERD_SLEEP_MED_COMPONENTS,
+                                        function(k) meds[[k]] %in% TRUE))
+meds$on_hypnotics <- meds$on_z_hypnotic | meds$on_benzo_hypnotic  # back-compat
+gb_say("   on_sleep_med: ", format(sum(meds$on_sleep_med), big.mark = ","),
+       " people (tricyclic ", sum(meds$on_tricyclic),
+       ", benzo-hypnotic ", sum(meds$on_benzo_hypnotic),
+       ", z-hypnotic ", sum(meds$on_z_hypnotic), ")")
 gb_save(meds, "medication_flags_sleep.rds")
 saveRDS(meds, file.path(GB_OUT, "R9_medication_flags.rds"))
 
@@ -492,20 +528,51 @@ age_at <- function(dates_df, col) {
 }
 
 excluded <- unique(c(excl_cond, excl_proc))
-gb_say("   exclusion set (achalasia / oesophageal cancer / oesophagectomy / gastrectomy): ",
-       format(length(excluded), big.mark = ","), " people",
+gb_say("   exclusions: ", format(length(excluded), big.mark = ","), " people",
        if (GERD_APPLY_EXCLUSIONS) " -- REMOVED" else " -- retained")
 
-vp_sleep <- age_at(first_sleep, "first_fitbit_sleep_date") %>%
-  filter(person_id %in% sleep_summary_filtered$person_id, person_id %in% ehr_ids)
-vp_act <- age_at(first_act, "first_fitbit_date") %>%
-  filter(person_id %in% steps_summary$person_id, person_id %in% ehr_ids)
-if (GERD_APPLY_EXCLUSIONS) {
-  vp_sleep <- vp_sleep %>% filter(!person_id %in% excluded)
-  vp_act   <- vp_act   %>% filter(!person_id %in% excluded)
+# CONSORT-style audit: every step from "has Fitbit sleep" to the modelled
+# cohort, so the paper's participant-flow figure can be written from numbers
+# that were actually produced rather than reconstructed afterwards.
+consort <- function(dates_df, col, expo_ids, label) {
+  s0 <- unique(dates_df$person_id)
+  s1 <- intersect(s0, expo_ids)                       # meets the Fitbit minimum
+  s2 <- intersect(s1, ehr_ids)                        # shares EHR
+  a  <- age_at(dates_df, col)
+  s3 <- intersect(s2, a$person_id)                    # age >= GB_MIN_AGE, DOB known
+  s4 <- if (GERD_APPLY_EXCLUSIONS) setdiff(s3, excluded) else s3
+  steps <- data.frame(
+    step = c("Has Fitbit data",
+             paste0("Meets the ", label, " minimum"),
+             "Shares EHR data",
+             paste0("Age >= ", GB_MIN_AGE, " with a known date of birth"),
+             "After clinical exclusions"),
+    n = c(length(s0), length(s1), length(s2), length(s3), length(s4)))
+  steps$removed <- c(NA, -diff(steps$n))
+  cat("\n  -- participant flow: ", label, " --\n", sep = "")
+  print(steps, row.names = FALSE)
+  list(ids = s4, table = steps)
 }
+
+fl_sleep <- consort(first_sleep, "first_fitbit_sleep_date",
+                    sleep_summary_filtered$person_id,
+                    paste0(">=", GB_MIN_SLEEP_NIGHTS, " valid nights"))
+fl_act   <- consort(first_act, "first_fitbit_date", steps_summary$person_id,
+                    paste0(">=", GB_MIN_ACT_DAYS, " valid days"))
+
+vp_sleep <- age_at(first_sleep, "first_fitbit_sleep_date") %>%
+  filter(person_id %in% fl_sleep$ids)
+vp_act <- age_at(first_act, "first_fitbit_date") %>%
+  filter(person_id %in% fl_act$ids)
 gb_save(vp_sleep, "valid_population_sleep.rds")
 gb_save(vp_act,   "R9_valid_population.rds")
+
+# Written out so the numbers land in the manuscript without being retyped.
+flow <- rbind(cbind(cohort = "sleep", fl_sleep$table),
+              cbind(cohort = "activity", fl_act$table))
+saveRDS(flow, file.path(GB_OUT, "R9_participant_flow.rds"))
+utils::write.csv(flow, file.path(GB_OUT, "participant_flow.csv"), row.names = FALSE)
+gb_say("   wrote participant_flow.csv")
 
 # ==============================================================================
 # Summary
