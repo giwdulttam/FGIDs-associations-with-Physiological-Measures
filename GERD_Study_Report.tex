@@ -210,9 +210,20 @@ from those alone:
 \code{Demographic\_and\_Fitbit\_Data} & Demographics; Fitbit sleep, steps and heart rate (the exposures) \\
 \code{EHR\_Data} & Conditions, procedures and drug exposures (the outcomes, comorbidities and medications) \\
 \code{Survery\_Data} & Survey covariates and BMI \\
+\code{Antidepressants}, \code{Antipsychotics}, & \\
+\code{Beta\_Blockers}, \code{Calcium\_Blockers}, & Medication covariates, one export per class \\
+\code{Narcotics} & \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\noindent The five medication exports are \emph{authoritative} for their class:
+membership of the \code{Narcotics} export establishes opioid exposure without
+depending on an ingredient name matching a pattern. Tricyclics are separated out
+of the antidepressant export by name, because the sleep-medication covariate
+requires that class specifically. Folders are located by name anywhere beneath
+\code{\textasciitilde/workspace}, since they have already been reorganised once
+during the study.
 
 \noindent All three carry \code{person\_id}, and the build merges on it. The
 crucial point is that \textbf{the GERD cohort is not the IBS cohort}: nothing is
@@ -258,6 +269,12 @@ both fragmented sleep and reflux, and it travels with obesity. An unadjusted
 estimate of "poor sleep $\rightarrow$ GERD" partly measures undiagnosed apnoea
 instead. \code{has\_sleep\_apnea} (concept 313459) enters every adjusted model.
 
+\paragraph{(ii-b) Opioid analgesics are adjusted for.}
+Added when the study team exported a dedicated \code{Narcotics} dataset. Opioids
+delay gastric emptying and reduce lower oesophageal sphincter tone, and they
+fragment sleep --- they confound both sides of the association, so leaving them
+out would load an opioid effect onto the sleep coefficient.
+
 \paragraph{(iii) Foregut surgery and upper gastrointestinal cancer are exclusions.}
 A myotomy deliberately cuts the lower oesophageal sphincter, so reflux afterwards
 is produced \emph{by the operation}. Fundoplication, gastrectomy, bariatric
@@ -287,9 +304,9 @@ exists and on name where it does not.
  &+ \gamma_5 \text{education} + \gamma_6 \text{income}
    + \gamma_7 \text{smoking} + \gamma_8 \text{alcohol} + \gamma_9 \text{BMI} \\
  &+ \gamma_{10}\,\textbf{sleep apnoea} + \gamma_{11}\,\textbf{sleep medication} \\
- &+ \gamma_{12} \text{depression} + \gamma_{13} \text{anxiety}
-   + \gamma_{14} \text{diabetes} + \gamma_{15} \text{hypertension}
-   + \gamma_{16} \text{peptic ulcer disease}
+ &+ \gamma_{13} \text{depression} + \gamma_{14} \text{anxiety}
+   + \gamma_{15} \text{diabetes} + \gamma_{16} \text{hypertension}
+   + \gamma_{17} \text{peptic ulcer disease}
 \end{aligned}
 \]
 

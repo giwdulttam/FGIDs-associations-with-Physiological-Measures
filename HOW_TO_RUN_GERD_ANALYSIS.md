@@ -37,16 +37,27 @@ Results land in `~/workspace/gerd_build/manuscript_output/`.
 
 # What the build does
 
-It reads the three Resources datasets and merges them on `person_id`:
+It merges everything on `person_id`:
 
-| Dataset | Supplies |
+| Folder | Supplies |
 |---|---|
 | `Demographic_and_Fitbit_Data` | Demographics; Fitbit sleep, steps, heart rate — **the exposures** |
-| `EHR_Data` | Conditions, procedures, drug exposures — **outcomes, comorbidities, medications** |
+| `EHR_Data` | Conditions, procedures, drug exposures — **outcomes and comorbidities** |
 | `Survery_Data` | Survey covariates and BMI |
+| `Antidepressants`, `Antipsychotics`, `Beta_Blockers`, `Calcium_Blockers`, `Narcotics` | **Medication covariates** |
 
-> The survey folder really is spelled `Survery_Data` in this workspace. The code
-> accepts either spelling and auto-detects it, so a rename won't break the run.
+Folders are found **by name, anywhere under `~/workspace`** — the code does not
+depend on where they sit. They have already moved once (into `~/workspace/Data
+Folder/`, whose name contains a space) and the survey folder is spelled
+`Survery_Data`; both are handled. If a folder genuinely cannot be found, the
+error lists every folder that *is* there so you can see the real name at a
+glance.
+
+The five medication folders are **authoritative** for their class: appearing in
+the `Narcotics` export means you are on an opioid, with no dependence on an
+ingredient name matching a pattern. Tricyclics are split out of the
+antidepressant export by name, because `on_sleep_med` needs that class
+specifically.
 
 It writes ~25 files into `~/workspace/gerd_build/` using the names the analysis
 already expects, so step 2 runs unmodified.
@@ -117,7 +128,7 @@ domain adjusted for the other.
 logit P(outcome) ~ exposure quartile (Q1 reference)
                  + age + sex + race + ethnicity + education + income
                  + smoking + alcohol + BMI
-                 + sleep apnoea + sleep medication
+                 + sleep apnoea + sleep medication + opioid analgesic
                  + depression + anxiety + diabetes + hypertension + PUD
 ```
 
@@ -199,7 +210,7 @@ oesophagitis.
 
 | Message | What to do |
 |---|---|
-| `Folder not found: ~/workspace/Survery_Data` | Check the folder name in the Files pane and set `GB_DIRS` at the top of the build script. |
+| `Could not find a folder named ...` | The error lists every folder under `~/workspace`. Find the real name there and set `GB_DIR_NAMES` at the top of the build script. |
 | `No files matching 'sleepLevel'` | The Fitbit export is missing that table. Run `check_fitbit_data.R`. |
 | Build runs out of memory | Lower `GB_MAX_SHARDS`, run in pieces, or restart R first — the build needs a clean session. |
 | `these columns are entirely missing -- ...` | The named source didn't supply that covariate. Send me the line. |

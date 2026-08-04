@@ -196,6 +196,7 @@ GERD_BINARY_COVARS <- c(
   "has_heart_failure", "has_mi", "has_stroke", "has_copd", "has_sleep_apnea",
   "has_benign_esoph_neoplasm",
   "on_sleep_med", "on_tricyclic", "on_benzo_hypnotic", "on_z_hypnotic",
+  "on_narcotic",
   "on_ppi", "on_h2ra",
   "on_beta_blocker", "on_calcium_blocker", "on_stimulants",
   "on_antidepressants", "on_antipsychotics", "on_anxiolytics", "on_hypnotics",
@@ -207,7 +208,8 @@ GERD_TABLE1_VARS <- c(
   "age_at_fitbit_start", "age_cat", "median_bmi", "sex_birth_collapsed",
   "race_collapsed", "ethnicity_collapsed", "education_collapsed",
   "income_collapsed", "alcohol_likert_collapsed", "smoking_binary",
-  "has_sleep_apnea", "on_sleep_med", "has_depression", "has_anxiety",
+  "has_sleep_apnea", "on_sleep_med", "on_narcotic",
+  "has_depression", "has_anxiety",
   "has_diabetes", "has_hypertension", "has_pud", "cci_cat"
 )
 
@@ -275,6 +277,7 @@ GERD_LABELS <- c(
   has_sleep_apnea           = "Obstructive sleep apnea",
   has_benign_esoph_neoplasm = "Benign neoplasm of oesophagus",
   on_sleep_med              = "Sleep medication (tricyclic or hypnotic)",
+  on_narcotic               = "Opioid analgesic",
   on_tricyclic              = "Tricyclic antidepressant",
   on_benzo_hypnotic         = "Benzodiazepine hypnotic",
   on_z_hypnotic             = "Non-benzodiazepine hypnotic",
@@ -322,7 +325,7 @@ GERD_ADJ_COVARS_BASE <- c(
   "education_collapsed", "income_collapsed",
   "alcohol_likert_collapsed", "smoking_binary",
   "median_bmi",
-  "has_sleep_apnea", "on_sleep_med",
+  "has_sleep_apnea", "on_sleep_med", "on_narcotic",
   "has_depression", "has_anxiety",
   "has_diabetes", "has_hypertension",
   "has_pud"

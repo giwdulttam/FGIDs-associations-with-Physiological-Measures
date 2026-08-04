@@ -33,10 +33,25 @@
 # ==============================================================================
 # CONFIG
 # ==============================================================================
-if (!exists("GB_DIRS")) GB_DIRS <- c(demog  = "~/workspace/Demographic_and_Fitbit_Data",
-             ehr    = "~/workspace/EHR_Data",
-             survey = "~/workspace/Survery_Data")
+# Folders are located by NAME, searched for under GB_ROOT. They have moved once
+# already (into "~/workspace/Data Folder/") and the survey folder is spelled
+# "Survery_Data", so hard-coding full paths breaks on the next reorganisation.
+if (!exists("GB_ROOT")) GB_ROOT <- "~/workspace"
+if (!exists("GB_DIR_NAMES")) GB_DIR_NAMES <- c(
+  demog  = "Demographic_and_Fitbit_Data",
+  ehr    = "EHR_Data",
+  survey = "Survery_Data|Survey_Data")
 if (!exists("GB_OUT")) GB_OUT  <- "~/workspace/gerd_build"
+
+# Medication exports, one folder per class. Anyone appearing in a folder is on
+# that class -- far more reliable than matching ingredient names, so these take
+# precedence over the name patterns when present.
+if (!exists("GB_MED_DIR_NAMES")) GB_MED_DIR_NAMES <- c(
+  on_antidepressants = "Antidepressants",
+  on_antipsychotics  = "Antipsychotics",
+  on_beta_blocker    = "Beta_Blockers",
+  on_calcium_blocker = "Calcium_Blockers",
+  on_narcotic        = "Narcotics")
 
 GB_MIN_SLEEP_NIGHTS <- 180    # eligibility: valid nights
 GB_MIN_ACT_DAYS     <- 30     # eligibility: valid activity days
@@ -61,15 +76,66 @@ dir.create(GB_OUT, recursive = TRUE, showWarnings = FALSE)
 .t0 <- Sys.time()
 gb_say <- function(...) { cat(format(Sys.time(), "%H:%M:%S"), " ", paste0(...), "\n", sep = ""); flush.console() }
 
+# En-dashed factor levels and concept names need a UTF-8 locale; without it they
+# fail to match and covariates silently become NA.
+if (!grepl("UTF-8", Sys.getlocale("LC_CTYPE"), ignore.case = TRUE))
+  for (lc in c("C.UTF-8", "en_US.UTF-8", "C.utf8")) {
+    ok <- suppressWarnings(try(Sys.setlocale("LC_ALL", lc), silent = TRUE))
+    if (!inherits(ok, "try-error") && nzchar(ok)) break
+  }
+
 gb_say("Building GERD inputs into ", GB_OUT)
 gerd_concept_report()
 
 # ==============================================================================
 # Helpers
 # ==============================================================================
+# Find a folder by NAME anywhere under GB_ROOT. Handles the folders having been
+# moved into a subdirectory whose own name contains a space ("Data Folder"), and
+# accepts a regex so both spellings of the survey folder resolve.
+.gb_all_dirs <- NULL
+gb_find_dir <- function(name_rx, required = TRUE) {
+  if (is.null(.gb_all_dirs)) {
+    root <- path.expand(GB_ROOT)
+    if (!dir.exists(root)) stop("GB_ROOT does not exist: ", root, call. = FALSE)
+    d <- suppressWarnings(list.dirs(root, recursive = TRUE, full.names = TRUE))
+    # Keep the search shallow; never descend into an export's own shard folders.
+    depth <- vapply(strsplit(sub(paste0("^", root, "/?"), "", d), "/"),
+                    length, integer(1))
+    .gb_all_dirs <<- d[depth <= 3]
+  }
+  hit <- .gb_all_dirs[grepl(paste0("^(", name_rx, ")$"), basename(.gb_all_dirs))]
+  hit <- hit[!grepl("gerd_build", hit)]
+  if (!length(hit)) {
+    if (!required) return(NA_character_)
+    stop("Could not find a folder named '", name_rx, "' under ",
+         path.expand(GB_ROOT), ".\n\nFolders that ARE there:\n",
+         paste0("  ", .gb_all_dirs[.gb_all_dirs != path.expand(GB_ROOT)],
+                collapse = "\n"),
+         "\n\nIf the name is different, set GB_DIR_NAMES at the top of this file.",
+         call. = FALSE)
+  }
+  if (length(hit) > 1)
+    gb_say("   NOTE: several folders match '", name_rx, "'; using ", hit[1])
+  normalizePath(hit[1])
+}
+
+# Resolve everything up front, so a missing folder fails in a second rather than
+# after the first table has been read.
+GB_DIRS <- vapply(GB_DIR_NAMES, gb_find_dir, character(1))
+gb_say("Data folders:")
+for (k in names(GB_DIRS)) gb_say("   ", k, ": ", GB_DIRS[[k]])
+
+GB_MED_DIRS <- vapply(GB_MED_DIR_NAMES, gb_find_dir, character(1), required = FALSE)
+if (any(!is.na(GB_MED_DIRS))) {
+  gb_say("Medication folders:")
+  for (k in names(GB_MED_DIRS)[!is.na(GB_MED_DIRS)])
+    gb_say("   ", k, ": ", basename(GB_MED_DIRS[[k]]))
+}
+
 gb_dir <- function(k) {
-  d <- path.expand(GB_DIRS[[k]])
-  if (!dir.exists(d)) stop("Folder not found: ", d, call. = FALSE)
+  d <- GB_DIRS[[k]]
+  if (is.na(d) || !dir.exists(d)) stop("Folder not resolved: ", k, call. = FALSE)
   d
 }
 
@@ -498,7 +564,42 @@ if (!is.null(drug) && nrow(drug)) {
     meds[[nm]] <- meds$person_id %in% unique(drug$person_id[grepl(MED_RX[[nm]], drug$.nm)])
 } else {
   for (nm in names(MED_RX)) meds[[nm]] <- FALSE
-  gb_say("   WARNING: no medication data -- all on_* flags are FALSE")
+  gb_say("   WARNING: no ingredientOccurrence data -- name-matched flags are FALSE")
+}
+if (!"on_narcotic" %in% names(meds)) meds$on_narcotic <- FALSE
+
+# The per-class medication folders are authoritative where they exist: a person
+# in the Antidepressants export is on an antidepressant, with no dependence on
+# an ingredient name being spelled the way the pattern expects.
+for (k in names(GB_MED_DIRS)) {
+  d <- GB_MED_DIRS[[k]]
+  if (is.na(d)) next
+  f <- list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)
+  if (!length(f)) { gb_say("   ", k, ": folder present but empty"); next }
+  md <- gb_stream(f, cols = c("person_id", "standard_concept_name",
+                              "T_DISP_standard_concept_name"),
+                  label = k, fn = function(x) x)
+  if (is.null(md) || !nrow(md) || !"person_id" %in% names(md)) next
+  ids <- unique(md$person_id)
+  prev <- sum(meds[[k]] %in% TRUE)
+  meds[[k]] <- meds$person_id %in% ids
+  gb_say("   ", k, ": ", format(length(ids), big.mark = ","),
+         " people from the export (name-matching had ", prev, ")")
+
+  # Tricyclics live inside the antidepressant export; split them out by name so
+  # on_sleep_med reflects the class the expert actually named.
+  if (k == "on_antidepressants") {
+    nmv <- gb_disp(md, "standard_concept_name")
+    if (!is.null(nmv)) {
+      tri <- unique(md$person_id[grepl(GERD_MED_RX$on_tricyclic, tolower(as.character(nmv)))])
+      if (length(tri)) {
+        meds$on_tricyclic <- meds$person_id %in% tri
+        gb_say("   on_tricyclic: ", format(length(tri), big.mark = ","),
+               " people (from the antidepressant export)")
+      }
+    }
+  }
+  rm(md); invisible(gc(verbose = FALSE))
 }
 # The covariate the expert asked for: any tricyclic OR any hypnotic. Components
 # are kept alongside it so a reviewer can see what it is made of.

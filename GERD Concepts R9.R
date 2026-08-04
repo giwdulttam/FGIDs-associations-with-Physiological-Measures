@@ -213,7 +213,10 @@ GERD_MED_RX <- list(
   on_stimulants     = "methylphenidate|amphetamine|lisdexamfetamine|modafinil|armodafinil",
   on_antidepressants= "sertraline|fluoxetine|citalopram|escitalopram|paroxetine|venlafaxine|duloxetine|bupropion|trazodone|mirtazapine",
   on_antipsychotics = "quetiapine|risperidone|olanzapine|aripiprazole|haloperidol|ziprasidone",
-  on_anxiolytics    = "alprazolam|lorazepam|clonazepam|diazepam|buspirone|chlordiazepoxide"
+  on_anxiolytics    = "alprazolam|lorazepam|clonazepam|diazepam|buspirone|chlordiazepoxide",
+  # Opioids: delay gastric emptying and reduce lower oesophageal sphincter tone,
+  # and fragment sleep -- they confound both sides of the association.
+  on_narcotic       = "oxycodone|hydrocodone|morphine|fentanyl|tramadol|codeine|hydromorphone|methadone|buprenorphine|oxymorphone|tapentadol"
 )
 # Components combined into the single sleep-medication covariate.
 GERD_SLEEP_MED_COMPONENTS <- c("on_tricyclic", "on_benzo_hypnotic", "on_z_hypnotic")
