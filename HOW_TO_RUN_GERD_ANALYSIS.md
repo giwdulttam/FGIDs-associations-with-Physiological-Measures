@@ -26,7 +26,14 @@ GERD_DATA_DIR <- "~/workspace/gerd_build"
 source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")
 ```
 
-Results land in `~/workspace/gerd_build/manuscript_output/`.
+**Console — step 3, the spline analysis (~10–20 min):**
+
+```r
+source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")
+```
+
+Results land in `~/workspace/gerd_build/manuscript_output/` (quartiles) and
+`manuscript_output_splines/` (splines).
 
 > **Do a dry run first.** Open `GERD Build Cohort From Export.R`, set
 > `GB_MAX_SHARDS <- 20`, and run step 1. It finishes in a few minutes and proves
@@ -119,6 +126,60 @@ Each set contains Table 1, Table 2 (with quartile cutoffs), Supplement Tables 1�
 forest and GVIF figures, a diagnostics summary, and the exact quartile boundaries.
 `combined_*_mutually_adjusted_pairs.csv` adds sleep × activity pairs with each
 domain adjusted for the other.
+
+---
+
+# The spline analysis (step 3)
+
+The quartile models are the primary analysis. Step 3 adds a **restricted cubic
+spline** analysis that keeps each exposure continuous, following Master et al.,
+*Nature Medicine* 2022 — All of Us, Fitbit exposures, EHR outcomes, acid reflux
+among them, Frank Harrell as senior methodologist.
+([doi:10.1038/s41591-022-02012-w](https://doi.org/10.1038/s41591-022-02012-w))
+
+**It changes nothing.** It reuses the analysis frames step 2 saved, so both
+analyses use identical participants and an identical adjustment set — any
+difference between them is the exposure parameterisation and nothing else. Run
+step 2 first.
+
+Per exposure it fits splines with **3, 4 and 5 knots**, keeps the lowest **AIC**,
+and reports two p-values from Harrell's chunk test:
+
+| Column | Question |
+|---|---|
+| `p_overall` | Is the exposure associated with the outcome **at all**? |
+| `p_nonlinear` | Does that association **depart from a straight line**? |
+| `shape` | The two combined: `linear`, `non-linear`, `no association`, or `UNSTABLE` |
+
+The effect estimate is the OR comparing the **75th to the 25th percentile**, the
+same contrast Master et al. report.
+
+**Read `<cohort>_spline_summary.csv` first.** Then the figures: fitted curve,
+95% band, knot ticks, and the exposure distribution beneath — so a wide interval
+in a sparse region isn't misread as a finding.
+
+### Why this matters for your question
+
+A quartile model cannot express a U-shape. If both short and long sleep raise
+the odds, Q1 and Q4 both look elevated but the model can't say where the minimum
+is or whether either end is real. The spline can.
+
+Where `p_nonlinear` is **not** significant, the quartile estimates stand on their
+own. Where it **is**, the quartile table understates the relationship and the
+spline figure should carry the interpretation.
+
+### `UNSTABLE` rows
+
+A spline can converge and still be meaningless — with few cases the cubic terms
+can produce an OR of 10⁵ with a confidence interval spanning twenty orders of
+magnitude, sometimes with a significant-looking p-value. Rows whose CI ratio
+exceeds 1000, or whose |log OR| exceeds log(50), are suppressed and marked
+`UNSTABLE`. They stay in the CSV with the reason in `unstable_why`. **Do not
+report them.** If many appear, set `GERD_SPLINE_KNOTS <- c(3)` — 5 knots costs
+four degrees of freedom on the exposure alone.
+
+`epv` is events per parameter; below 10 the model is provisional
+(Peduzzi et al. 1996).
 
 ---
 

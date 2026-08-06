@@ -329,9 +329,190 @@ sharing, the age threshold and the clinical exclusions, for both the sleep and
 activity cohorts. The manuscript's flow figure is transcribed from that file
 rather than reconstructed after the fact.
 
-\subsection*{A5. Deliverables, as amended}
+\subsection*{A5. Secondary analysis: restricted cubic splines on the continuous exposures}
+
+The primary analysis divides each exposure into quartiles. That is robust,
+makes no functional-form assumption, and matches the published template --- but
+it discards within-quartile variation, imposes step changes at cut-points that
+carry no biological meaning, and cannot recover the \emph{shape} of a
+dose--response relationship. A U-shaped association, in which both very short
+and very long sleep carry elevated odds, is precisely the pattern a quartile
+model is least able to express: Q1 and Q4 both appear elevated relative to a
+mid-range reference, but the model cannot say where the minimum lies or whether
+the rise at either end is real.
+
+This section adds a spline analysis alongside the quartile models. It replaces
+nothing: both analyses are fitted on identical participants with an identical
+adjustment set, so any difference between them is attributable to the exposure
+parameterisation and to nothing else.
+
+\paragraph{Methodological precedent.} The procedure follows Master et al.,
+\emph{Nature Medicine} 2022;28:2301--2308,
+``Association of step counts over time with the risk of chronic disease in the
+All of Us Research Program'' (doi:10.1038/s41591-022-02012-w). That study is the
+closest available precedent: the same cohort resource, Fitbit-derived exposures,
+EHR-derived outcomes, and Frank Harrell as senior methodologist. It also reports
+acid reflux among its outcomes, so the exposure--outcome pair examined here is
+one it examined directly.
+
+\paragraph{Procedure.} For each continuous exposure:
+
+\begin{enumerate}
+\item Fit restricted cubic splines with 3, 4 and 5 knots in separate logistic
+models, each adjusted for the full covariate set.
+\item Select the knot count with the lowest AIC. All three candidates are fitted
+on the same rows, so the comparison is valid.
+\item Test the exposure with Harrell's Wald ``chunk test'', reported as two
+separate quantities:
+\begin{itemize}
+\item \textbf{$p$-overall} --- jointly, are \emph{all} spline terms zero? This
+asks whether the exposure is associated with the outcome at all.
+\item \textbf{$p$-non-linearity} --- jointly, are the \emph{non-linear} terms
+zero? This asks whether that association departs from a straight line on the
+log-odds scale.
+\end{itemize}
+\item Report the effect as the odds ratio comparing the 75th to the 25th
+percentile of the exposure, matching the contrast Master et al.\ report.
+\item Plot the fitted curve with a 95\% confidence band across the observed
+range, referenced to the median.
+\end{enumerate}
+
+Knots sit at Harrell's recommended quantiles (\emph{Regression Modeling
+Strategies}, Table 2.3), which are the \code{rms::rcs()} defaults:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Knots} & \textbf{Quantiles} \\
+\midrule
+3 & 10, 50, 90 \\
+4 & 5, 35, 65, 95 \\
+5 & 5, 27.5, 50, 72.5, 95 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The spline basis.} With knots $t_1 < \cdots < t_k$, the basis is the
+truncated power form of \emph{Regression Modeling Strategies} eq.~2.25: the
+first column is $x$ itself and, for $j = 1, \ldots, k-2$,
+\[
+X_{j+1} = \frac{(x-t_j)_+^3
+ - (x-t_{k-1})_+^3\,\frac{t_k-t_j}{t_k-t_{k-1}}
+ + (x-t_k)_+^3\,\frac{t_{k-1}-t_j}{t_k-t_{k-1}}}{(t_k-t_1)^2}.
+\]
+The linear term occupying column one is what makes the two chunk tests a clean
+partition: dropping columns $2,\ldots,k-1$ leaves a model linear in $x$, and
+dropping all of them removes $x$ entirely. The basis is implemented directly
+rather than through \code{rms}, so the pipeline carries no additional dependency,
+and it is verified on load against \code{splines::ns()} --- the two bases span
+the same function space, so a model fitted with either must produce identical
+fitted values. The run aborts if that check fails.
+
+\paragraph{Odds ratio curves.} For a model
+$\operatorname{logit}\Pr(Y=1) = \beta_0 + \mathbf{B}(x)^\top\boldsymbol\beta + \mathbf{Z}^\top\boldsymbol\gamma$,
+the odds ratio at $x$ relative to a reference $x_0$ is
+\[
+\mathrm{OR}(x \,\vert\, x_0) = \exp\!\big[(\mathbf{B}(x)-\mathbf{B}(x_0))^\top \boldsymbol\beta\big],
+\qquad
+\widehat{\mathrm{Var}} = \mathbf{d}^\top \mathbf{V}_{\boldsymbol\beta}\, \mathbf{d},
+\quad \mathbf{d} = \mathbf{B}(x)-\mathbf{B}(x_0).
+\]
+Every covariate is held fixed and cancels exactly, so only the spline block of
+the coefficient vector and its covariance sub-matrix are required. The reference
+and both contrast percentiles are placed on the evaluation grid, so the plotted
+curve passes exactly through $\mathrm{OR}=1$ at the reference rather than merely
+near it.
+
+\paragraph{Two deliberate departures from Master et al.} Both follow from this
+study's design and are stated here so that neither is mistaken for an oversight.
+
+\begin{itemize}
+\item \textbf{Logistic regression, not Cox.} This study is cross-sectional.
+There is no follow-up time and no incident-event structure, so a proportional
+hazards model is not defined; odds ratios replace hazard ratios. Master et al.\
+likewise used logistic regression for their own cross-sectional screening step
+and reserved Cox models for the longitudinal analysis their repeated-measures
+design supported.
+\item \textbf{Complete-case, not multiple imputation.} The paper pooled results
+over five \code{aregImpute} datasets. Complete-case analysis is used here so
+that the spline and quartile models are fitted on exactly the same rows. Adding
+imputation to one arm only would confound a difference in \emph{shape} with a
+difference in \emph{missing-data handling}, which is the one comparison this
+section exists to make. Per-model missingness is reported so the cost is visible,
+and multiple imputation across both analyses remains available as a sensitivity
+analysis.
+\end{itemize}
+
+\paragraph{Stability safeguards.} A spline model can converge and still be
+numerically meaningless. With few cases, cubic terms can yield an odds ratio of
+$10^5$ with a confidence interval spanning twenty orders of magnitude, and --- as
+observed during validation --- such a model can carry an apparently significant
+$p$-value. Three guards prevent that reaching a table:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{8.4cm}@{}}
+\toprule
+\textbf{Guard} & \textbf{Action} \\
+\midrule
+CI ratio $>1000$ & Estimate suppressed, row marked \textsc{unstable} \\
+$\lvert \log \mathrm{OR}\rvert > \log 50$ & Estimate suppressed, row marked \textsc{unstable} \\
+Events per parameter $<10$ & Estimate retained, flagged as provisional \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Suppressed rows remain in the CSV with the reason recorded in
+\code{unstable\_why}, so nothing is silently discarded, but they are excluded
+from the shape classification and displayed as \code{--}. The events-per-variable
+threshold follows Peduzzi et al.\ (1996); it matters more here than in the
+quartile analysis because a 5-knot spline spends four degrees of freedom on the
+exposure alone.
+
+\paragraph{Validation.} The implementation is verified against data with known
+structure before use: a simulated U-shape must be detected as non-linear with
+its minimum recovered in the right place; a simulated linear trend must be
+detected as an association but \emph{not} as non-linear; a null exposure must
+trigger neither test; and the 75th-versus-25th-percentile odds ratio must agree
+with an independently fitted linear-logit model. All four checks, together with
+the basis identity against \code{splines::ns()}, pass.
+
+\paragraph{Outputs.} Written to \code{manuscript\_output\_splines/}, separate
+from the quartile outputs:
+
+\begin{itemize}
+\item \code{<cohort>\_spline\_summary.csv} --- one row per outcome $\times$
+exposure: selected knot count, knot locations, AIC, OR (75th vs 25th) with CI,
+both $\chi^2$ statistics with degrees of freedom, both raw and multiplicity-
+adjusted $p$-values, events per parameter, and a \code{shape} column reading
+\emph{linear}, \emph{non-linear}, \emph{no association} or \textsc{unstable}.
+\item \code{<cohort>\_<outcome>\_<exposure>\_spline.png} --- the fitted curve
+with its confidence band, knot locations, reference line, and the exposure
+distribution beneath, so that a wide interval in a sparse region is not misread
+as a finding.
+\item \code{<cohort>\_<outcome>\_<exposure>\_curve.csv} --- the plotted
+coordinates, so figures can be restyled for submission without refitting.
+\end{itemize}
+
+Multiplicity is handled exactly as in the primary analysis: Bonferroni within
+outcome, across exposures, governed by the same \code{GERD\_P\_ADJUST} setting.
+
+\paragraph{Interpretation.} The two analyses answer different questions and
+should be read together. The quartile models give the manuscript's headline
+effect estimates in the familiar form; the spline models establish whether the
+quartile pattern reflects a genuine monotone gradient, a threshold, or a
+U-shape, and where any inflection lies. Where $p$-non-linearity is not
+significant, the linear-in-log-odds summary is adequate and the quartile
+estimates can be reported without qualification. Where it \emph{is} significant,
+the quartile table understates the relationship and the spline figure should
+carry the interpretation.
+
+\subsection*{A6. Deliverables, as amended}
 {\small\noindent
 \code{GERD Concepts R9.R},\;
+\code{GERD Spline Analysis R9.R},\;
+\code{RUN\_GERD\_SPLINE\_ANALYSIS.R},\;
 \code{GERD Build Cohort From Export.R},\;
 \code{export_new_datasets_schema.R},\;
 \code{check_fitbit_data.R},\;
