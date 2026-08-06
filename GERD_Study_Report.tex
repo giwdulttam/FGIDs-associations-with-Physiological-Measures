@@ -508,10 +508,86 @@ estimates can be reported without qualification. Where it \emph{is} significant,
 the quartile table understates the relationship and the spline figure should
 carry the interpretation.
 
-\subsection*{A6. Deliverables, as amended}
+\subsection*{A6. Head-to-head: did the spline analysis change anything?}
+
+Two analyses now estimate the same associations, which raises an obvious
+question that should not require reading two sets of tables side by side to
+answer. \code{GERD Quartile vs Spline Comparison R9.R} answers it in one file
+per cohort, written at the end of the spline run.
+
+\paragraph{Making the comparison fair.} Three differences would make a naive
+side-by-side misleading. All three are eliminated by \emph{refitting} every
+model inside the comparison rather than reading the two analyses' output files.
+
+\begin{enumerate}
+\item \textbf{The contrasts differ.} The quartile model reports Q4 versus Q1;
+the spline reports the 75th versus the 25th percentile. Q4 versus Q1 contrasts
+the middles of the top and bottom quarters, which lie further apart than
+$P_{75}$ and $P_{25}$, so comparing the two directly would show an effect-size
+difference that is an artefact of the contrast rather than of the method. The
+comparison therefore evaluates the spline at the \emph{median of Q1} and the
+\emph{median of Q4}, so both columns answer the same question. The
+$P_{75}$-versus-$P_{25}$ contrast is retained in its own columns.
+\item \textbf{The row sets differ.} The spline analysis trims to the
+1st--99th percentile; the quartile analysis does not. AIC and interval widths
+are not comparable across different rows, so the trim is applied to both.
+\item \textbf{The covariate sets can differ.} The sparsity guard may drop
+different covariates in the two fits. Here it runs once and the surviving set is
+used for all three models.
+\end{enumerate}
+
+\noindent With those controlled, any remaining difference is attributable to the
+exposure parameterisation, which is the only thing under test.
+
+\paragraph{What each row reports.} Odds ratios from both methods on the matched
+contrast; $\Delta$AIC (spline minus quartile, negative favouring the spline);
+the ratio of confidence-interval widths on the log-odds scale, below one meaning
+the spline is more precise; the non-linearity $p$-value; and a plain-language
+\code{verdict}:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{8.2cm}@{}}
+\toprule
+\textbf{Verdict} & \textbf{Meaning} \\
+\midrule
+\textsc{spline adds}: non-linear & The relationship is not log-linear. The quartile table understates it; the spline figure should carry the interpretation. \\
+\textsc{spline adds}: association only the spline detects & The quartile model missed it. \\
+disagree & The two methods differ on significance. Investigate before reporting either. \\
+agree; spline more precise & Same conclusion, narrower interval. \\
+agree & Same conclusion. Report quartiles as primary; cite the spline as confirming log-linearity. \\
+unstable & Too few cases. Suppressed on whichever side is affected; not reportable. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why this is worth having even when the answer is ``no''.} A verdict of
+\emph{agree} across the board is a substantive result, not a null one: it
+establishes that the quartile estimates are not an artefact of where the
+cut-points fell, and it forecloses the reviewer question ``did you check the
+functional form?''. One methods sentence then covers it.
+
+\paragraph{The case this exists to catch.} During validation, a simulated
+symmetric U-shape produced a quartile odds ratio of $1.00$ (0.91--1.11) --- an
+exactly null result --- because Q1 and Q4 sit at comparable risk when the
+minimum lies in the middle, so the contrast between them cancels. The spline
+recovered the same relationship with $p_{\text{non-linearity}} < 10^{-4}$ and
+$\Delta\mathrm{AIC} = -2049$. A quartile analysis alone would have reported no
+association where a strong one exists. This is not a hypothetical failure mode:
+it is the specific reason a sleep exposure warrants the check, since both short
+and long sleep are plausibly associated with reflux.
+
+\paragraph{Stability applies to both sides.} The suppression rules of section A5
+are applied to the quartile estimate as well as the spline. A quartile model is
+no less capable of degeneracy --- validation produced one with an odds ratio of
+$4.9 \times 10^9$ --- and a table that suppressed only the spline would imply
+the other side was trustworthy when it was not.
+
+\subsection*{A7. Deliverables, as amended}
 {\small\noindent
 \code{GERD Concepts R9.R},\;
 \code{GERD Spline Analysis R9.R},\;
+\code{GERD Quartile vs Spline Comparison R9.R},\;
 \code{RUN\_GERD\_SPLINE\_ANALYSIS.R},\;
 \code{GERD Build Cohort From Export.R},\;
 \code{export_new_datasets_schema.R},\;

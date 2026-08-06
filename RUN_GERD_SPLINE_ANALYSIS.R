@@ -29,7 +29,8 @@ if (!grepl("UTF-8", Sys.getlocale("LC_CTYPE"), ignore.case = TRUE))
 
 ## ---- locate the code ---------------------------------------------------------
 .need <- c("GERD Analysis Helpers R9.R", "GERD Data Prep R9.R",
-           "GERD Spline Analysis R9.R")
+           "GERD Spline Analysis R9.R",
+           "GERD Quartile vs Spline Comparison R9.R")
 .has <- function(d) length(d) == 1 && nzchar(d) && dir.exists(d) &&
   all(file.exists(file.path(d, .need)))
 .script_dir <- function() {
@@ -68,6 +69,7 @@ suppressWarnings(suppressMessages({
   source(file.path(GERD_CODE_DIR, "GERD Analysis Helpers R9.R"))
   source(file.path(GERD_CODE_DIR, "GERD Data Prep R9.R"))
   source(file.path(GERD_CODE_DIR, "GERD Spline Analysis R9.R"))
+  source(file.path(GERD_CODE_DIR, "GERD Quartile vs Spline Comparison R9.R"))
 }))
 cat("[3/4] Engine loaded. Verifying the spline basis...\n")
 if (!isTRUE(gerd_spline_selftest()))
@@ -97,7 +99,10 @@ for (nm in intersect(GERD_RUN, names(.frames))) {
   .res[[nm]] <- tryCatch({
     d  <- readRDS(f)
     md <- prep_modeling_df(d, .expo[[nm]])
-    gerd_spline_analysis(md, exposures = .expo[[nm]], stub = nm)
+    sp <- gerd_spline_analysis(md, exposures = .expo[[nm]], stub = nm)
+    # Head-to-head against the quartile models, refitted on identical rows.
+    gerd_compare_all(md, exposures = .expo[[nm]], stub = nm)
+    sp
   }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e)); NULL })
   cat("\n---", nm, if (is.null(.res[[nm]])) "FAILED" else "COMPLETED", "in",
       round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
@@ -119,6 +124,13 @@ if (dir.exists(.out)) {
   cat("\nEach row reports the AIC-selected knot count, the OR comparing the 75th\n")
   cat("to the 25th percentile, and two p-values: whether the exposure is\n")
   cat("associated with the outcome at all, and whether that association departs\n")
-  cat("from linearity. The 'shape' column combines them.\n")
+  cat("from linearity. The 'shape' column combines them.\n\n")
+  cat("THEN read the head-to-head files -- this is the one that answers\n")
+  cat("'did the spline change anything?':\n")
+  for (f in list.files(.out, pattern = "_quartile_vs_spline\\.csv$"))
+    cat("  ", f, "\n", sep = "")
+  cat("\nIts `verdict` column is the answer, per exposure. Both OR columns in\n")
+  cat("that file are the SAME contrast (median of Q4 vs median of Q1), refitted\n")
+  cat("on identical rows, so they are directly comparable.\n")
 } else cat("\nNo output folder was created -- see the messages above.\n")
 cat("\nDone.\n")

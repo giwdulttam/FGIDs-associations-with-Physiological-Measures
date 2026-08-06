@@ -154,6 +154,34 @@ and reports two p-values from Harrell's chunk test:
 The effect estimate is the OR comparing the **75th to the 25th percentile**, the
 same contrast Master et al. report.
 
+### Did the spline actually change anything?
+
+That is the point of **`<cohort>_quartile_vs_spline.csv`**, written automatically
+at the end of step 3. One row per exposure, with a plain-language `verdict`
+column:
+
+| Verdict | What to do |
+|---|---|
+| `SPLINE ADDS: relationship is non-linear` | The quartile table understates it — use the spline figure |
+| `SPLINE ADDS: association only the spline detects` | The quartile model missed it |
+| `disagree ...` | The methods differ on significance — investigate before reporting |
+| `agree; spline more precise` | Same conclusion, narrower CI |
+| `agree ...` | Report quartiles as primary, cite splines as confirming log-linearity |
+| `... unstable ...` | Too few cases; not reportable |
+
+Both OR columns are the **same contrast** (median of Q4 vs median of Q1), refit
+on identical rows with identical covariates — so the difference you see is the
+method, not an artefact. `dAIC` below 0 favours the spline; `CIratio` below 1
+means the spline is more precise.
+
+The console prints a summary ending in a one-line verdict for the whole cohort.
+
+> **Why this matters.** In validation, a true U-shape gave a quartile OR of
+> **1.00 (0.91–1.11)** — perfectly null — because Q1 and Q4 sit at similar risk
+> when the minimum is in the middle. The spline found it with p < 0.0001 and
+> ΔAIC −2049. If sleep has a U-shape, the quartile analysis alone would report
+> nothing.
+
 **Read `<cohort>_spline_summary.csv` first.** Then the figures: fitted curve,
 95% band, knot ticks, and the exposure distribution beneath — so a wide interval
 in a sparse region isn't misread as a finding.
