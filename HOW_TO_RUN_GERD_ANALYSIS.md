@@ -112,15 +112,13 @@ cohorts. Transcribe the flow figure from that rather than reconstructing it.
 
 # What you get
 
-Nine sets of files — 3 outcomes × 3 exposure sets:
+**Six configurations** — 2 outcomes × 3 exposure sets:
 
-| Prefix | Analysis |
-|---|---|
-| `sleep_gerd_any_*` | Sleep → GERD (all) |
-| `sleep_gerd_no_eso_*` | Sleep → GERD without oesophagitis |
-| `sleep_esophagitis_*` | Sleep → Oesophagitis |
-| `activity_*` | Same three, activity exposures |
-| `combined_*` | Same three, sleep + activity |
+| Exposure set | `has_gerd_any` | `has_esophagitis` |
+|---|---|---|
+| (A) Sleep quartiles | Config 1 — `sleep_gerd_any_*` | Config 2 — `sleep_esophagitis_*` |
+| (B) Activity quartiles | Config 3 — `activity_gerd_any_*` | Config 4 — `activity_esophagitis_*` |
+| (C) Combined (+ mutually adjusted) | Config 5 — `combined_gerd_any_*` | Config 6 — `combined_esophagitis_*` |
 
 Each set contains Table 1, Table 2 (with quartile cutoffs), Supplement Tables 1–2,
 forest and GVIF figures, a diagnostics summary, and the exact quartile boundaries.
@@ -225,12 +223,23 @@ logit P(outcome) ~ exposure quartile (Q1 reference)
 
 | Outcome | Definition |
 |---|---|
-| `has_gerd_any` | GERD (`318800`), ≥2 records |
-| `has_gerd_no_eso` | GERD case with **no** oesophagitis record, ever |
+| `has_gerd_any` | GERD (`318800`) + descendants, ≥2 records |
 | `has_esophagitis` | Oesophagitis (`30753`) + erosive (`4231067`), ≥2 records |
 
+Both are modelled on the full eligible cohort. They are **not** mutually
+exclusive — a participant can carry codes for both, and the overlap is reported
+descriptively under `DESCRIPTIVE (not modelled)` in the console output.
+
+> **`has_gerd_no_eso` is no longer an outcome.** Earlier versions modelled
+> "GERD without oesophagitis" — first seeded on `4144111`, then derived by
+> excluding oesophagitis carriers. Both are gone: the study now models GERD and
+> oesophagitis directly. The derived flag is still computed and printed because
+> the manuscript reports the overlap, but it is never modelled and consumes no
+> multiplicity budget. Output files with a `gerd_no_eso` prefix are from an
+> older run — delete `manuscript_output/` before rerunning.
+
 Barrett's (`443344`) is pulled as its own outcome file for the severity gradient
-GERD → oesophagitis → Barrett's.
+GERD → oesophagitis → Barrett's, but is not modelled by default.
 
 **Exclusions applied before modelling:**
 

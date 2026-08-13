@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------------
 # Title: Activity + Sleep and GERD / Oesophagitis Analysis (combined exposures)
-# Description: Relates BOTH Fitbit SLEEP and PHYSICAL ACTIVITY metrics to the three
+# Description: Relates BOTH Fitbit SLEEP and PHYSICAL ACTIVITY metrics to the two
 #              acid-related outcomes on the INTERSECTION cohort (participants with
 #              >=180 valid sleep nights AND >=30 valid activity days, sharing EHR,
 #              aged >=18).

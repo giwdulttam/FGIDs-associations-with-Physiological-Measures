@@ -2,9 +2,8 @@
 # Title: Activity and GERD / Oesophagitis Analysis (All of Us R9)
 # Description: Retrospective cross-sectional analysis of Fitbit PHYSICAL ACTIVITY
 #              metrics (exposure) and TWO acid-related outcomes:
-#                (1) has_gerd_any    - any GERD          (seed 318800, descendants)
-#                (2) has_gerd_no_eso - GERD in someone with NO oesophagitis code
-#                (3) has_esophagitis - oesophagitis       (seed 30753, descendants)
+#                (1) has_gerd_any    - any GERD    (seed 318800, descendants)
+#                (2) has_esophagitis - oesophagitis (seed 30753, descendants)
 #
 #              Activity exposures (cohort quartiles, Q1 reference): daily steps,
 #              lightly/fairly/very/total active minutes, sedentary minutes, and

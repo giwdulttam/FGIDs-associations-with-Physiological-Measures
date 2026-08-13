@@ -83,8 +83,8 @@
 \begin{abstract}
 \noindent This report documents the design and implementation of a retrospective, cross-sectional
 analysis relating Fitbit-recorded \emph{sleep} and \emph{physical-activity} metrics (exposures) to two
-parallel electronic-health-record (EHR) outcomes --- gastroesophageal reflux disease
-\emph{without} oesophagitis (\code{has_gerd_no_eso}, seed concept 4144111) and \emph{oesophagitis}
+electronic-health-record (EHR) outcomes --- gastroesophageal reflux disease
+(\code{has_gerd_any}, seed concept 318800) and \emph{oesophagitis}
 (\code{has_esophagitis}, seed concept 30753) --- among
 participants of the \emph{All of Us} Research Program (Controlled Tier CDR v9, C2024Q3R9) who shared
 both wearable and EHR data. The study is organized as a $2\times3$ matrix: two outcomes crossed with
@@ -118,24 +118,48 @@ a self-contained methodological reference for reproducing and critiquing the stu
 \addcontentsline{toc}{section}{Protocol Amendment (supersedes parts of this report)}
 %======================================================================
 \noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{%
-\textbf{Read this before the rest of the report.} Two decisions described in the
-body of this document have since been changed. Where the body and this section
-disagree, \textbf{this section is current}. The analysis code in the repository
-implements the amended design; the body of the report has not been rewritten.}}
+\textbf{Read this before the rest of the report.} Several decisions described in
+the body of this document have since been changed. Where the body and this
+section disagree, \textbf{this section is current}. The analysis code in the
+repository implements the amended design; the body has been updated only at the
+abstract and executive-summary level.
+
+\medskip
+\textbf{One rule covers most of the difference:} wherever the body refers to
+\code{has\_gerd\_no\_eso}, or to concept \textbf{4144111}, as a modelled
+outcome, that is superseded. The study models \code{has\_gerd\_any} (seed
+\textbf{318800}) and \code{has\_esophagitis} (seed \textbf{30753}); the
+non-oesophagitic group is derived and reported descriptively but is never
+modelled. Passages in the body discussing what a GERD-without-oesophagitis
+phenotype would show should be read as motivating the \code{has\_gerd\_any}
+versus \code{has\_esophagitis} contrast instead.}}
 
 \subsection*{A1. The outcome definition changed}
 The body of this report defines \code{has_gerd_no_eso} as a standalone phenotype
 seeded on concept \textbf{4144111} (``GERD without oesophagitis''), pulled in
-parallel with oesophagitis (\textbf{30753}). Inspection of the cohort in the
+parallel with oesophagitis (\textbf{30753}). That design has been superseded
+twice, and the current specification is stated here in full.
+
+\paragraph{Why 4144111 was abandoned.} Inspection of the cohort in the
 \emph{All of Us} Cohort Builder showed substantial overlap between participants
-carrying 4144111 and participants carrying oesophagitis codes: the ``without
+carrying 4144111 and participants carrying oesophagitis codes. The ``without
 oesophagitis'' label on the concept does not, in practice, identify a
 non-oesophagitic group, because participants accumulate both kinds of code over
 time. Seeding on 4144111 therefore does not deliver the contrast the study
 intends.
 
-The amended design pulls the \emph{broad} GERD concept and derives the
-non-oesophagitic group by exclusion:
+\paragraph{Why the derived exclusion group was also dropped.} The intermediate
+design pulled broad GERD and derived a ``GERD without oesophagitis'' group by
+removing oesophagitis carriers. That group has now been removed from the
+modelled set as well. It was never the study's question: the analysis asks how
+sleep and physical activity relate to reflux disease and to oesophagitis, and
+those are answered by modelling each condition directly. Carving a third,
+mutually-conditioned group out of the first added a phenotype whose
+interpretation depends on the completeness of oesophagitis coding, consumed a
+third of the multiplicity budget, and produced an outcome no reader had asked
+about.
+
+\paragraph{Current specification --- two outcomes.}
 
 \begin{table}[h]
 \centering
@@ -144,42 +168,50 @@ non-oesophagitic group by exclusion:
 \textbf{Outcome} & \textbf{Source} & \textbf{Rule} \\
 \midrule
 \code{has_gerd_any}    & seed \textbf{318800} (SNOMED 235595009) + descendants & $\geq 2$ records \\
-\code{has_gerd_no_eso} & derived & GERD case with \emph{no} oesophagitis record, ever \\
 \code{has_esophagitis} & seed \textbf{30753} (SNOMED 16761005) + descendants   & $\geq 2$ records \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent Consequences for the analysis, all implemented in
-\code{GERD Analysis Helpers R9.R}:
+\noindent Erosive oesophagitis (\textbf{4231067}) is folded into the
+oesophagitis concept set: it is the same phenotype coded with more specificity,
+and excluding it would place those participants in the ``no oesophagitis''
+group. The two outcomes are not mutually exclusive --- a participant may carry
+codes for both, and that overlap is reported descriptively rather than being
+made into a third outcome.
 
-\begin{itemize}
-\item \textbf{There are now three outcomes, not two}, so the analysis grid is
-$3 \times 3 = 9$ configurations rather than the six described in
-Section~\ref{sec:six-configs-ref} of the body. \code{has_gerd_any} and
-\code{has_gerd_no_eso} are \emph{nested}, not parallel; \code{has_esophagitis} is
-the complementary group.
-\item \textbf{The exclusion is applied at the person level over the entire record
-history}, not only to records meeting the $\geq 2$ rule and not only to records
-after the Fitbit anchor. A single oesophagitis code at any point disqualifies a
-participant. The threshold is exposed as
-\code{GERD_ESO_EXCLUSION_MIN_RECORDS} (default 1).
-\item \textbf{Participants carrying any oesophagitis record are removed from the
-\code{gerd_no_eso} analytic sample entirely}, rather than retained as controls.
-Retaining them would place acid-disease patients in the reference group and bias
-the odds ratios toward the null. The realised sample size for that outcome is
-printed at run time and differs from the other two.
-\item \textbf{Quartile cutoffs remain fixed on the full eligible cohort} and are
-deliberately not recomputed within the restricted sample, so that Q1--Q4 denote
-identical exposure ranges across all three outcomes and the estimates stay
-mutually comparable.
-\item \textbf{The scope caveat on \textnormal{30753} now matters twice.} Its
-descendants include non-reflux oesophagitis (eosinophilic, infectious,
-pill-induced, radiation). That concept set defines the \code{esophagitis} outcome
-\emph{and} drives the exclusion that defines \code{gerd_no_eso}, so an over-broad
-seed inflates one outcome and shrinks another. The code emits a diagnostic if the
-exclusion removes more than 75\% of the GERD group.
-\end{itemize}
+\paragraph{The six analysis configurations.} Two outcomes crossed with three
+exposure sets:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l c c@{}}
+\toprule
+\textbf{Exposure set} & \textbf{\code{has_gerd_any}} & \textbf{\code{has_esophagitis}} \\
+\midrule
+(A) Sleep quartiles                  & Config 1 & Config 2 \\
+(B) Activity quartiles               & Config 3 & Config 4 \\
+(C) Combined (+ mutually adjusted)   & Config 5 & Config 6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Each configuration produces Table 1, Table 2, two supplementary
+tables, two figures and a diagnostics summary. The spline analysis of
+section A5 and the head-to-head of section A6 run over the same six.
+
+\paragraph{What is retained descriptively.} \code{build\_gerd\_outcomes()} still
+derives the non-oesophagitic flag and the count of participants carrying any
+oesophagitis record, and prints both under a \textsc{descriptive (not modelled)}
+heading. The GERD/oesophagitis overlap is a number the manuscript reports, and
+it should come from the same code path that defines the outcomes rather than a
+separate tabulation. Nothing about it enters a model, a table, or the
+multiplicity correction.
+
+\paragraph{Multiplicity.} Bonferroni correction is applied within outcome,
+across exposures, exactly as before. Reducing three modelled outcomes to two
+reduces the number of models by a third and correspondingly relaxes the
+correction, which is a real gain in power rather than a bookkeeping change.
 
 \subsection*{A2. The outcome pull now queries the workspace's own dataset}
 The body describes \code{GERD Outcome Data Upload R9.R}, which queries
@@ -607,17 +639,16 @@ the other side was trustworthy when it was not.
 
 This report specifies a retrospective, cross-sectional analysis conducted in the All of Us Research Program (Controlled Tier Curated Data Repository v9, release C2024Q3R9) that relates objectively measured, Fitbit-recorded physiological exposures -- sleep and physical activity -- to acid-related upper gastrointestinal disease ascertained from electronic health records (EHR). The study is deliberately built around \emph{two} binary outcome phenotypes and \emph{three} exposure sets, yielding a $2 \times 3$ grid of six primary analysis configurations that share a single statistical engine.
 
-The two outcomes are \emph{parallel} EHR phenotypes, each requiring at least two condition records
+The two outcomes are EHR phenotypes, each requiring at least two condition records
 ($\geq 2$) and each drawn from its own dedicated, descendant-expanded condition pull.
-\code{has_gerd_no_eso} captures gastroesophageal reflux disease \emph{without} oesophagitis (seed
-concept \textbf{4144111}) --- essentially non-erosive reflux disease, dominated by symptom-based
-diagnosis. \code{has_esophagitis} captures oesophagitis (seed concept \textbf{30753}), the phenotype
-carrying documented mucosal injury. Because the two come from separate pulls rather than one broad pull
-subdivided by concept name, neither is a subset of the other: they are distinct clinical entities
-sitting on either side of the erosive/non-erosive divide. They are not mutually exclusive either --- a
-participant may accumulate codes from both over time, and the pipeline quantifies that overlap
-explicitly. Analysing them side by side is what allows the study to ask whether physiological exposures
-act on symptom perception, on measurable tissue damage, or on both.
+\code{has_gerd_any} captures gastroesophageal reflux disease (seed concept
+\textbf{318800}), the broad group dominated by symptom-based diagnosis.
+\code{has_esophagitis} captures oesophagitis (seed concept \textbf{30753}, with erosive
+oesophagitis \textbf{4231067} folded in), the phenotype carrying documented mucosal injury.
+The two are not mutually exclusive --- a participant may accumulate codes from both over
+time, and the pipeline quantifies that overlap explicitly rather than making it a third
+outcome. Analysing them side by side is what allows the study to ask whether physiological
+exposures act on symptom perception, on measurable tissue damage, or on both.
 
 The three exposure sets are each analyzed against \emph{both} outcomes. (A) Sleep exposures are cohort quartiles (with Q1 as the reference level) of average nightly minutes asleep, minutes in bed, minutes awake, minutes restless, deep, light, and REM sleep, and sleep efficiency (asleep divided by in-bed). (B) Activity exposures are cohort quartiles of average daily steps, lightly, fairly, very, and total active minutes, sedentary minutes, and a corrected maximum daily heart rate. (C) The combined set operates on the intersection cohort (participants with valid sleep \emph{and} valid activity streams) and analyzes each of the roughly fifteen exposures separately, plus mutually-adjusted models that carry a sleep quartile and an activity quartile together in the same equation (for example, minutes-asleep quartile jointly with steps quartile).
 
@@ -625,7 +656,7 @@ The three exposure sets are each analyzed against \emph{both} outcomes. (A) Slee
 \centering
 \begin{tabular}{lcc}
 \toprule
-Exposure set & Outcome \code{has_gerd_no_eso} & Outcome \code{has_esophagitis} \\
+Exposure set & Outcome \code{has_gerd_any} & Outcome \code{has_esophagitis} \\
 \midrule
 (A) Sleep quartiles & Config 1 & Config 2 \\
 (B) Activity quartiles & Config 3 & Config 4 \\

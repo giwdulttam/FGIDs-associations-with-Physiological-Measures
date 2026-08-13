@@ -76,44 +76,46 @@ GERD_OUTPUT_DIR <- "manuscript_output"
 # 1) Outcomes, exposures, covariates, labels
 # ==============================================================================
 # --- Outcome phenotypes --------------------------------------------------------
-# Two descendant-expanded pulls:
-#     GERD (all)     seed 318800  (SNOMED 235595009)
-#     Oesophagitis   seed 30753   (SNOMED 16761005)
+# TWO modelled outcomes, from two descendant-expanded pulls:
 #
-# and three analysis outcomes built from them:
+#   has_gerd_any     seed 318800 (SNOMED 235595009) + descendants, >=2 records
+#   has_esophagitis  seed 30753  (SNOMED 16761005)  + descendants, >=2 records
 #
-#   gerd_any     any GERD code                       -- the parent group
-#   gerd_no_eso  GERD code AND no oesophagitis code  -- derived by EXCLUSION
-#   esophagitis  any oesophagitis code
+# crossed with three exposure sets to give the study's six configurations:
 #
-# NOTE ON THE DESIGN CHANGE. An earlier version used the narrow concept 4144111
-# ("GERD without esophagitis") as a standalone phenotype. Checking the cohort in
-# the Cohort Builder showed heavy overlap between 4144111 and oesophagitis --
-# people carry both codes -- so 4144111 does not actually identify a
-# non-oesophagitic group. Excluding oesophagitis from the broad GERD group does.
-# gerd_any and gerd_no_eso are nested; esophagitis is the complementary group.
+#                            has_gerd_any   has_esophagitis
+#     (A) Sleep quartiles      Config 1        Config 2
+#     (B) Activity quartiles   Config 3        Config 4
+#     (C) Combined             Config 5        Config 6
 #
-# `restrict` narrows the analytic sample for that outcome. For gerd_no_eso the
-# controls must be people with NEITHER condition, so participants carrying any
-# oesophagitis record are dropped from the sample entirely -- not kept as
-# controls, which would put acid-disease patients in the reference group and bias
-# the odds ratios towards the null.
+# DESIGN HISTORY, so the concept ids in older outputs are not misread.
+# The study has used three outcome definitions in sequence:
+#
+#   1. Seeded on 4144111 ("GERD without esophagitis") as a standalone phenotype.
+#      Abandoned: the Cohort Builder showed heavy overlap between 4144111 and
+#      oesophagitis, because participants accumulate both kinds of code over
+#      time, so the concept's label does not identify a non-oesophagitic group.
+#   2. Broad GERD with a derived "GERD without oesophagitis" group, obtained by
+#      excluding oesophagitis carriers.
+#   3. CURRENT: broad GERD and oesophagitis modelled directly, as two outcomes.
+#
+# The derived non-oesophagitic flag is still COMPUTED by build_gerd_outcomes()
+# and reported in the console counts, because the GERD/oesophagitis overlap is a
+# descriptive number the manuscript needs. It is simply no longer modelled, so
+# it does not appear here and consumes no multiplicity budget.
+#
+# `restrict` remains supported for any future outcome that needs a narrower
+# analytic sample; neither current outcome uses it, so both are modelled on the
+# full eligible cohort.
 GERD_OUTCOMES <- list(
   gerd_any    = list(col = "has_gerd_any",
-                     labels = c("No GERD", "GERD (all)")),
-  gerd_no_eso = list(col = "has_gerd_no_eso",
-                     labels = c("No GERD or oesophagitis", "GERD without oesophagitis"),
-                     restrict = function(d)
-                       if ("has_eso_any_record" %in% names(d))
-                         d[!(d$has_eso_any_record %in% TRUE), , drop = FALSE] else d,
-                     restrict_note =
-                       "participants with any oesophagitis record removed"),
+                     labels = c("No GERD", "GERD")),
   esophagitis = list(col = "has_esophagitis",
                      labels = c("No oesophagitis", "Oesophagitis"))
 )
 
 # Which of the above to actually model. Trim this to shorten a run.
-GERD_RUN_OUTCOMES <- c("gerd_any", "gerd_no_eso", "esophagitis")
+GERD_RUN_OUTCOMES <- c("gerd_any", "esophagitis")
 
 # Every outcome-derived column build_gerd_outcomes() can produce. Analysis files
 # use this to NA-fill after the left join, without touching the has_* covariates
@@ -129,12 +131,13 @@ gerd_cohort_summary <- function(df, label) {
   n1 <- function(v) if (v %in% names(df)) sum(df[[v]] %in% TRUE) else NA_integer_
   cat("\n================ ", label, " COHORT SUMMARY ================\n", sep = "")
   cat("N =", nrow(df), "| duplicate person_ids:", sum(duplicated(df$person_id)), "\n")
-  cat("  GERD (all), primary                 :", n1("has_gerd_any"), "\n")
-  cat("  GERD without oesophagitis, primary  :", n1("has_gerd_no_eso"), "\n")
-  cat("  Oesophagitis, primary               :", n1("has_esophagitis"), "\n")
-  cat("  Any oesophagitis record             :", n1("has_eso_any_record"),
-      "(dropped from the gerd_no_eso sample)\n")
-  cat("  GERD (all), sensitivity definition  :", n1("has_gerd_any_sens"), "\n")
+  cat("  MODELLED OUTCOMES\n")
+  cat("    GERD, primary                     :", n1("has_gerd_any"), "\n")
+  cat("    Oesophagitis, primary             :", n1("has_esophagitis"), "\n")
+  cat("    GERD, sensitivity definition      :", n1("has_gerd_any_sens"), "\n")
+  cat("  DESCRIPTIVE (not modelled)\n")
+  cat("    Any oesophagitis record           :", n1("has_eso_any_record"), "\n")
+  cat("    GERD with no oesophagitis record  :", n1("has_gerd_no_eso"), "\n")
   invisible(NULL)
 }
 
@@ -342,7 +345,7 @@ GERD_CCI_LABEL  <- if (GERD_CCI_COVARIATE == "cci_cat")
 # 2) Primary-outcome selection (paper-matching vs "ever")
 # ==============================================================================
 # Analysis files build BOTH definitions as *_ever and *_post_fitbit columns.
-# This sets has_gerd_no_eso / has_esophagitis according to GERD_PRIMARY_DEF, and keeps
+# This sets has_gerd_any / has_esophagitis according to GERD_PRIMARY_DEF, and keeps
 # the alternative available as *_sens for sensitivity analyses.
 apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
   stopifnot(primary %in% c("post_fitbit", "ever"))
@@ -374,9 +377,9 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
 # ==============================================================================
 # Returns one row per person with, for each of the three phenotypes, an "_ever"
 # and a "_post_fitbit" column:
-#   has_gerd_any_ever    / has_gerd_any_post_fitbit
-#   has_gerd_no_eso_ever / has_gerd_no_eso_post_fitbit
-#   has_esophagitis_ever / has_esophagitis_post_fitbit
+#   has_gerd_any_ever    / has_gerd_any_post_fitbit     <- modelled
+#   has_esophagitis_ever / has_esophagitis_post_fitbit   <- modelled
+#   has_gerd_no_eso_ever / has_gerd_no_eso_post_fitbit   <- descriptive only
 #
 # "ever"        = >=2 qualifying condition records at any time
 # "post_fitbit" = >=2 records AND first record >= lag_days after the first Fitbit
@@ -391,17 +394,12 @@ apply_primary_outcome_def <- function(df, primary = GERD_PRIMARY_DEF) {
 #   first_fitbit_df : one row per person with the anchoring first Fitbit date
 #   fitbit_date_col : name of that date column (e.g. "first_fitbit_sleep_date")
 #
-# THE EXCLUSION. has_gerd_no_eso is NOT a separate pull. It is the GERD group
-# minus anyone carrying oesophagitis, applied at the PERSON level and to the
-# whole record history -- not just to records meeting the >=2 rule, and not just
-# to records after the Fitbit anchor. Someone with a single oesophagitis code ten
-# years ago is not "GERD without oesophagitis". That threshold is
-# GERD_ESO_EXCLUSION_MIN_RECORDS (default 1 = any record).
-#
-# Consequence worth stating in the methods: the exclusion is applied to
-# has_gerd_no_eso under BOTH case definitions, so the post-Fitbit variant is
-# "GERD diagnosed >=180 days after Fitbit start, in someone with no oesophagitis
-# code at any point in their record".
+# DESCRIPTIVE OVERLAP. has_gerd_no_eso and has_eso_any_record are still derived
+# here, but they are no longer modelled -- the study fits has_gerd_any and
+# has_esophagitis directly. They are kept because the manuscript reports how far
+# the two conditions overlap, and that count should come from the same code path
+# that defines the outcomes rather than from a separate ad-hoc tabulation. The
+# threshold is GERD_ESO_EXCLUSION_MIN_RECORDS (default 1 = any record).
 build_gerd_outcomes <- function(gerd_all_df, esophagitis_df,
                                 first_fitbit_df, fitbit_date_col,
                                 lag_days = GERD_POST_FITBIT_LAG_DAYS,
@@ -454,28 +452,23 @@ build_gerd_outcomes <- function(gerd_all_df, esophagitis_df,
     ep %>% dplyr::count(person_id) %>%
       dplyr::filter(n >= eso_exclusion_min) %>% dplyr::pull(person_id)
   excluded <- out$person_id %in% eso_ids
+  # Descriptive only -- neither of these is a modelled outcome any more. They are
+  # retained because the manuscript reports how far GERD and oesophagitis overlap,
+  # and that number has to come from somewhere auditable.
   out$has_gerd_no_eso_ever        <- out$has_gerd_any_ever        & !excluded
   out$has_gerd_no_eso_post_fitbit <- out$has_gerd_any_post_fitbit & !excluded
-  # Carried into the modelling frame so the gerd_no_eso analysis can DROP these
-  # participants rather than silently reclassify them as controls.
   out$has_eso_any_record <- excluded
 
   n_overlap_ever <- sum(out$has_gerd_any_ever & out$has_esophagitis_ever)
   cat("build_gerd_outcomes():",
       "\n  GERD (all)                 ever =", sum(out$has_gerd_any_ever),
       "| post-Fitbit =", sum(out$has_gerd_any_post_fitbit),
-      "\n  GERD without oesophagitis  ever =", sum(out$has_gerd_no_eso_ever),
-      "| post-Fitbit =", sum(out$has_gerd_no_eso_post_fitbit),
       "\n  Oesophagitis               ever =", sum(out$has_esophagitis_ever),
       "| post-Fitbit =", sum(out$has_esophagitis_post_fitbit),
-      "\n  Removed from the GERD group for carrying >=", eso_exclusion_min,
-      " oesophagitis record(s):", sum(out$has_gerd_any_ever & excluded),
-      "\n  GERD and oesophagitis cases overlapping (ever):", n_overlap_ever, "\n")
-  if (sum(out$has_gerd_any_ever) > 0 &&
-      sum(out$has_gerd_no_eso_ever) / sum(out$has_gerd_any_ever) < 0.25)
-    message("  [check] the exclusion removed >75% of the GERD group. Worth ",
-            "confirming the oesophagitis concept set is not over-broad ",
-            "(descendants of 30753 include eosinophilic and infectious causes).")
+      "\n  [descriptive] GERD cases also carrying oesophagitis:",
+      sum(out$has_gerd_any_ever & excluded),
+      "\n  [descriptive] GERD and oesophagitis overlapping (ever):", n_overlap_ever,
+      "\n  Modelled outcomes: has_gerd_any, has_esophagitis\n")
   out
 }
 
@@ -1135,7 +1128,7 @@ analyze_all_outcomes <- function(modeling_df, exposures,
 
     # Per-outcome sample restriction (see GERD_OUTCOMES). Quartile cutoffs were
     # fixed on the full eligible cohort upstream and are deliberately NOT
-    # recomputed here, so Q1..Q4 mean the same thing across all three outcomes.
+    # recomputed here, so Q1..Q4 mean the same thing across both outcomes.
     df_o <- modeling_df
     if (is.function(oc$restrict)) {
       df_o <- oc$restrict(df_o)

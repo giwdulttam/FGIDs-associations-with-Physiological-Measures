@@ -2,12 +2,10 @@
 # Title: Sleep and GERD / Oesophagitis Analysis (All of Us R9)
 # Description: Retrospective cross-sectional analysis of Fitbit SLEEP metrics
 #              (exposure) and TWO acid-related outcomes:
-#                (1) has_gerd_any    - any GERD          (seed 318800, descendants)
-#                (2) has_gerd_no_eso - GERD in someone with NO oesophagitis code
-#                (3) has_esophagitis - oesophagitis       (seed 30753, descendants)
-#              (2) is derived from (1) by EXCLUSION, not pulled separately: the
-#              narrow concept 4144111 overlaps heavily with oesophagitis in this
-#              cohort, so it does not identify a non-oesophagitic group.
+#                (1) has_gerd_any    - any GERD    (seed 318800, descendants)
+#                (2) has_esophagitis - oesophagitis (seed 30753, descendants)
+#              Both require >=2 condition records. The GERD/oesophagitis overlap
+#              is reported descriptively but is no longer a modelled outcome.
 #
 #              Mirrors the published IBS sleep paper: the primary phenotype is
 #              >=2 condition records with the FIRST occurring >=180 days after the
@@ -219,7 +217,7 @@ sleep_results <- analyze_all_outcomes(
 )
 
 # Numbers for the manuscript's Results / diagnostics prose:
-str(sleep_results$gerd_no_eso$diagnostics)
+for (.o in names(sleep_results)) { cat("\n[", .o, "]\n"); str(sleep_results[[.o]]$diagnostics) }
 str(sleep_results$esophagitis$diagnostics)
 
 message("Sleep and GERD analysis complete. See ./manuscript_output/ (prefix 'sleep_').")

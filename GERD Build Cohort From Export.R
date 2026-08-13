@@ -171,6 +171,17 @@ gb_stream <- function(paths, cols, fn, label = "") {
 }
 
 # T_DISP_X carries the readable text; X carries a code.
+# Always returns a character vector of length nrow(d). gb_disp() yields NULL when
+# neither the plain nor the T_DISP_ column is present, and dropping a NULL into a
+# data.frame column throws "arguments imply differing number of rows" or
+# "replacement has 0 rows". Every place a display column is materialised into a
+# frame goes through this; gb_disp() itself is kept for the sites that branch on
+# NULL deliberately.
+gb_chr <- function(d, base) {
+  v <- gb_disp(d, base)
+  if (is.null(v) || !length(v)) rep(NA_character_, nrow(d)) else as.character(v)
+}
+
 gb_disp <- function(d, base) {
   n <- paste0("T_DISP_", base)
   if (n %in% names(d)) d[[n]] else if (base %in% names(d)) d[[base]] else NULL
@@ -358,9 +369,9 @@ cond <- gb_stream(cond_paths,
   label = "conditions",
   fn = function(d) d[d$condition_concept_id %in% want_cond, , drop = FALSE])
 
-cond$standard_concept_name       <- as.character(gb_disp(cond, "standard_concept_name"))
-cond$standard_concept_code       <- as.character(gb_disp(cond, "standard_concept_code"))
-cond$condition_type_concept_name <- as.character(gb_disp(cond, "condition_type_concept_name"))
+cond$standard_concept_name       <- gb_chr(cond, "standard_concept_name")
+cond$standard_concept_code       <- gb_chr(cond, "standard_concept_code")
+cond$condition_type_concept_name <- gb_chr(cond, "condition_type_concept_name")
 cond$condition_start_datetime    <- as.POSIXct(cond$condition_start_datetime, tz = "UTC")
 
 gb_say("   matched condition rows: ", format(nrow(cond), big.mark = ","))
@@ -373,8 +384,14 @@ keep_cols <- c("person_id","condition_concept_id","standard_concept_name",
                "standard_concept_code","condition_start_datetime","condition_end_datetime",
                "condition_type_concept_name","stop_reason",
                "condition_status_source_value","condition_status_concept_id")
-shape <- function(d) { for (k in setdiff(keep_cols, names(d))) d[[k]] <- NA
-                       d[, keep_cols, drop = FALSE] }
+# `d[[k]] <- NA` fails on a zero-row frame ("replacement has 1 row, data has 0"),
+# which happens whenever a concept set matches nothing -- Barrett's is rare and
+# may legitimately be absent from an export. An outcome with no rows must produce
+# an empty, correctly-shaped file rather than stopping the whole build.
+shape <- function(d) {
+  for (k in setdiff(keep_cols, names(d))) d[[k]] <- rep(NA, nrow(d))
+  d[, keep_cols, drop = FALSE]
+}
 
 gb_save(shape(cond[cond$condition_concept_id %in% GERD_OUTCOME_SETS$gerd, ]),
         "R9_gerd_all_outcome.rds")
@@ -440,7 +457,7 @@ proc <- tryCatch(gb_stream(gb_shards("ehr", "procedureOccurrence"),
 procf <- data.frame(person_id = integer(0))
 excl_proc <- integer(0)
 if (!is.null(proc) && nrow(proc)) {
-  proc$.nm <- tolower(as.character(gb_disp(proc, "standard_concept_name")))
+  proc$.nm <- tolower(gb_chr(proc, "standard_concept_name"))
   pid  <- function(ids) unique(proc$person_id[proc$procedure_concept_id %in% ids])
   pnm  <- function(rx)  unique(proc$person_id[grepl(rx, proc$.nm)])
   procf <- data.frame(person_id = unique(proc$person_id))
@@ -482,10 +499,10 @@ per <- gb_stream(gb_shards("demog", "data_person"),
            "T_DISP_ethnicity","ethnicity","T_DISP_sex_at_birth","sex_at_birth"),
   label = "person", fn = function(d) d)
 demo <- data.frame(person_id = per$person_id,
-                   gender       = as.character(gb_disp(per, "gender")),
-                   race         = as.character(gb_disp(per, "race")),
-                   ethnicity    = as.character(gb_disp(per, "ethnicity")),
-                   sex_at_birth = as.character(gb_disp(per, "sex_at_birth")),
+                   gender       = gb_chr(per, "gender"),
+                   race         = gb_chr(per, "race"),
+                   ethnicity    = gb_chr(per, "ethnicity"),
+                   sex_at_birth = gb_chr(per, "sex_at_birth"),
                    date_of_birth = suppressWarnings(as.Date(per$date_of_birth)),
                    stringsAsFactors = FALSE) %>%
   distinct(person_id, .keep_all = TRUE)
