@@ -50,7 +50,11 @@ SURVEY_TOPICS <- list(
   Income    = list(qids = c(1585375), rx = "income"),
   Smoking   = list(qids = c(1585857, 1585860, 1586166, 1585856),
                    rx = "smok|cigar|tobacco"),
-  Alcohol   = list(qids = c(1586198, 1585636, 1585621, 1585597),
+  # NOT 1585636: that is "In your LIFETIME, which of the following substances
+  # have you ever used?", a drug-use question whose answers are Marijuana Use,
+  # Cocaine Use and so on. Including it here mixed those into the reported
+  # alcohol answer coding.
+  Alcohol   = list(qids = c(1586198, 1586201, 1586207, 1586213),
                    rx = "alcohol|drink")
 )
 

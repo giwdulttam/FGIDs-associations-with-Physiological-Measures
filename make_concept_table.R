@@ -1,0 +1,241 @@
+#-------------------------------------------------------------------------------
+# Build the concept-ID verification table.
+#
+# Every OMOP concept id the GERD project uses, in one place, with what the code
+# believes it means and where the id came from. Emits:
+#
+#   CONCEPT_ID_TABLE.csv  -- for the collaborator to annotate (blank verify column)
+#   CONCEPT_ID_TABLE.md   -- readable version of the same rows
+#
+# Both are generated from the single table below, so they cannot drift apart.
+# RUN:  Rscript make_concept_table.R
+#-------------------------------------------------------------------------------
+
+r <- function(id, name, code, role, used_in, status, source, notes = "")
+  data.frame(concept_id = id, name_in_code = name, vocab_code = code, role = role,
+             used_in = used_in, status = status, id_source = source,
+             VERIFY_ok = "", VERIFY_correct_id = "", notes = notes,
+             stringsAsFactors = FALSE)
+
+TB <- rbind(
+# ---- 1. MODELLED OUTCOMES ----------------------------------------------------
+r(318800,"Gastroesophageal reflux disease","SNOMED 235595009","Outcome: has_gerd_any",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",
+  "Primary outcome. Descendant-expanded. >=2 records."),
+r(30753,"Esophagitis","SNOMED 16761005","Outcome: has_esophagitis",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",
+  "Primary outcome. Descendant-expanded. >=2 records. VERIFY SCOPE: descendants may include eosinophilic, infectious, pill-induced and radiation oesophagitis."),
+r(4231067,"Erosive esophagitis","","Outcome: folded into has_esophagitis",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",
+  "Same phenotype coded more specifically; excluding it would put these people in the 'no oesophagitis' group."),
+
+# ---- 2. PULLED, NOT MODELLED -------------------------------------------------
+r(443344,"Barrett's esophagus","","Outcome, pulled but not modelled by default",
+  "GERD Concepts R9.R","ACTIVE (not modelled)","Supplied by study team",
+  "Written to its own file for the GERD -> oesophagitis -> Barrett's severity gradient."),
+
+# ---- 3. SUPERSEDED -----------------------------------------------------------
+r(4144111,"Gastroesophageal reflux disease without esophagitis","",
+  "Formerly an outcome; now only recognised as a GERD code",
+  "GERD Data Prep R9.R (GERD_ALL_SEED_IDS)","SUPERSEDED","Earlier project design",
+  "No longer a phenotype: it overlaps oesophagitis too heavily for its label to identify a non-oesophagitic group. Retained ONLY so records already coded with it count as GERD. It is a descendant of 318800."),
+
+# ---- 4. EXCLUSIONS -----------------------------------------------------------
+r(318186,"Achalasia","","Exclusion","GERD Concepts R9.R","ACTIVE","Supplied by study team",
+  "Mimics reflux; is the indication for Heller/POEM."),
+r(4181343,"Malignant tumor of esophagus","","Exclusion","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(4187533,"Esophagectomy","","Exclusion (procedure)","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(4203442,"Gastrectomy","","Exclusion (procedure)","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(NA,"Malignant tumor of STOMACH (gastric cancer)","","Exclusion",
+  "not implemented","**MISSING - PLEASE SUPPLY**","-",
+  "The expert asked to exclude gastric cancer. No concept id was supplied, so it is matched by NAME only, which works only if such rows are in the EHR export at all. Supply the id and confirm it is in the concept set."),
+r(NA,"Heller myotomy / POEM / cricopharyngeal myotomy","","Exclusion (procedure)",
+  "GERD_FOREGUT_SURGERY_RX (name match)","NAME-MATCHED ONLY","-",
+  "No concept id in this workspace's set. Matched on T_DISP_standard_concept_name. Supply ids if available - an id match is exact, a name match is not."),
+
+# ---- 5. COMORBIDITY COVARIATES (ACTIVE) --------------------------------------
+r(442077,"Anxiety disorder","","Covariate: has_anxiety","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team","CONFLICT: the legacy fallback path uses 441542 instead."),
+r(440383,"Depressive disorder","","Covariate: has_depression","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(316866,"Hypertensive disorder","","Covariate: has_hypertension","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(201826,"Type 2 diabetes mellitus","","Covariate: has_diabetes","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team","CONFLICT: the legacy fallback path uses 201820 instead."),
+r(319835,"Congestive heart failure","","Covariate: has_heart_failure","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team","CONFLICT: the legacy fallback path uses 316139 instead."),
+r(255573,"Chronic obstructive pulmonary disease","","Covariate: has_copd",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",""),
+r(313459,"Sleep apnea","","Covariate: has_sleep_apnea","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team","Required by the GERD expert. In the adjustment set."),
+r(4027663,"Peptic ulcer disorder","","Covariate: has_pud","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team",""),
+r(24602,"Benign neoplasm of esophagus","","Covariate: has_benign_esoph_neoplasm",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team","Reported, not in the adjustment set."),
+
+# ---- 6. PROCEDURE COVARIATES -------------------------------------------------
+r(4235008,"Nissen fundoplication","","Covariate proc_nissen AND foregut exclusion",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",
+  "DECISION NEEDED: currently EXCLUDED as foregut surgery. It is anti-reflux rather than reflux-generating, so there is a case for retaining these patients as a severe-GERD stratum."),
+r(4326683,"Bariatric operative procedure","","Covariate proc_bariatric AND foregut exclusion",
+  "GERD Concepts R9.R","ACTIVE","Supplied by study team",""),
+r(4170058,"Operation on esophagus","","Covariate proc_esophagus","GERD Concepts R9.R","ACTIVE",
+  "Supplied by study team","Parent concept. Not itself an exclusion; its named children are."),
+
+# ---- 7. BMI ------------------------------------------------------------------
+r(3038553,"Body mass index (BMI) [Ratio]","LOINC 39156-5","Covariate: median_bmi",
+  "GERD Data Prep R9.R (derive_bmi fallback)","FALLBACK ONLY","Inherited from IBS pipeline",
+  "The current build reads BMI from the Survery_Data bmi export instead, where T_DISP_measurement is 'Body mass index (BMI) [Ratio]'."),
+
+# ---- 8. SURVEY QUESTIONS -----------------------------------------------------
+r(1585940,"Highest grade or year of school completed","","Survey question: education",
+  "GERD Concepts R9.R","ACTIVE","VERIFIED in your export","44,350 persons in your data."),
+r(1585375,"Annual household income","","Survey question: income","GERD Concepts R9.R","ACTIVE",
+  "VERIFIED in your export","44,350 persons in your data."),
+r(1585857,"Smoked at least 100 cigarettes in entire life","","Survey question: smoking",
+  "GERD Concepts R9.R","ACTIVE","VERIFIED in your export","44,096 persons in your data."),
+r(1586198,"Ever had at least 1 drink of any kind of alcohol","","Survey question: alcohol participant",
+  "GERD Concepts R9.R","ACTIVE","VERIFIED in your export","44,096 persons in your data."),
+r(1586201,"How often did you have a drink containing alcohol in the past year","",
+  "Survey question: alcohol frequency (drives alcohol_likert_final)",
+  "GERD Concepts R9.R","ACTIVE","VERIFIED in your export","42,407 persons in your data."),
+r(1586207,"On a typical drinking day, how many drinks","",
+  "Survey question: drinks per day (drives alcohol_likert_final)",
+  "GERD Concepts R9.R","ACTIVE","VERIFIED in your export","35,335 persons in your data."),
+r(1586213,"How often six or more drinks on one occasion","","Survey question: binge",
+  "GERD Concepts R9.R","ACTIVE (not used in the covariate)","VERIFIED in your export",
+  "35,340 persons. Available but not currently part of alcohol_likert_final."),
+
+# ---- 9. SURVEY ANSWERS: EDUCATION -------------------------------------------
+r(1585941,"Never attended","","Answer -> 'High school or less'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585942,"One through four","","Answer -> 'High school or less'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585943,"Five through eight","","Answer -> 'High school or less'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585944,"Nine through eleven","","Answer -> 'High school or less'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585945,"Twelve or GED","","Answer -> 'High school or less'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585946,"College one to three","","Answer -> 'Some college'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585947,"College graduate","","Answer -> 'College or higher'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585948,"Advanced degree","","Answer -> 'College or higher'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+
+# ---- 10. SURVEY ANSWERS: INCOME ---------------------------------------------
+r(1585376,"less 10k","","Answer -> 'Less than $50k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585377,"10k-25k","","Answer -> 'Less than $50k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585378,"25k-35k","","Answer -> 'Less than $50k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585379,"35k-50k","","Answer -> 'Less than $50k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585380,"50k-75k","","Answer -> '$50k to $150k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585381,"75k-100k","","Answer -> '$50k to $150k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585382,"100k-150k","","Answer -> '$50k to $150k'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585383,"150k-200k","","Answer -> '$150k or more'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585384,"more 200k","","Answer -> '$150k or more'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+
+# ---- 11. SURVEY ANSWERS: SMOKING / ALCOHOL ----------------------------------
+r(1585858,"Yes (>=100 cigarettes)","","Answer -> smoking_binary 'Smoker'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1585859,"No","","Answer -> smoking_binary 'Non-smoker'","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586202,"Never","","Alcohol frequency -> likert 0","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586203,"Monthly or less","","Alcohol frequency","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586204,"2 to 4 per month","","Alcohol frequency","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586205,"2 to 3 per week","","Alcohol frequency","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586206,"4 or more per week","","Alcohol frequency","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586208,"1 or 2 drinks","","Drinks per day -> likert","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586209,"3 or 4 drinks","","Drinks per day -> likert","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586210,"5 or 6 drinks","","Drinks per day -> likert","GERD Concepts R9.R","ACTIVE","Inferred (not seen in your export)",""),
+r(1586211,"7 to 9 drinks","","Drinks per day -> likert","GERD Concepts R9.R","ACTIVE","Inferred (not seen in your export)",""),
+r(1586212,"10 or more drinks","","Drinks per day -> likert","GERD Concepts R9.R","ACTIVE","Inferred (not seen in your export)",""),
+r(1586199,"Yes (alcohol participant)","","Alcohol participant answer","GERD Data Prep R9.R","ACTIVE","VERIFIED in your export",""),
+r(1586200,"No (alcohol participant)","","Alcohol participant answer","GERD Data Prep R9.R","ACTIVE","Inferred",""),
+r(903096,"Skip","","Treated as missing in every survey question","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(903079,"Prefer not to answer","","Treated as missing","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+r(903087,"Don't know","","Treated as missing","GERD Concepts R9.R","ACTIVE","VERIFIED in your export",""),
+
+# ---- 12. LEGACY / FALLBACK ONLY ---------------------------------------------
+r(441542,"Anxiety (legacy id)","","Covariate has_anxiety, FALLBACK path only",
+  "GERD Data Prep R9.R (derive_comorbidities)","INACTIVE - CONFLICTS with 442077",
+  "Inherited from IBS pipeline",
+  "Only fires if no pre-built comorbidity file exists, which the current build always writes. Listed so the discrepancy is visible."),
+r(201820,"Diabetes (legacy id)","","Covariate has_diabetes, FALLBACK path only",
+  "GERD Data Prep R9.R","INACTIVE - CONFLICTS with 201826","Inherited from IBS pipeline",""),
+r(316139,"Heart failure (legacy id)","","Covariate has_heart_failure, FALLBACK path only",
+  "GERD Data Prep R9.R","INACTIVE - CONFLICTS with 319835","Inherited from IBS pipeline",""),
+r(4329847,"Myocardial infarction","","Covariate has_mi, FALLBACK path only",
+  "GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",
+  "No equivalent in the supplied concept list; has_mi is not in the adjustment set."),
+r(381316,"Stroke / cerebrovascular accident","","Covariate has_stroke, FALLBACK path only",
+  "GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",
+  "No equivalent in the supplied concept list; has_stroke is not in the adjustment set."),
+r(75576,"Irritable bowel syndrome","","Covariate has_ibs, FALLBACK path only",
+  "GERD Data Prep R9.R (derive_ibs_covariate)","INACTIVE","Inherited from IBS pipeline",
+  "has_ibs was dropped from the adjustment set - IBS is not in this workspace's concept set, so it was constant."),
+r(4234788,"IBS variant","","Covariate has_ibs, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(4261072,"IBS variant","","Covariate has_ibs, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(4057826,"IBS variant","","Covariate has_ibs, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+
+# ---- 13. DRUG CLASS CONCEPTS (legacy; superseded by the per-class exports) ---
+r(21601664,"Beta blocking agents (ATC class)","","on_beta_blocker, FALLBACK only",
+  "GERD Data Prep R9.R (derive_medications)","INACTIVE","Inherited from IBS pipeline",
+  "Superseded: the Beta_Blockers export folder is now authoritative."),
+r(21601765,"Calcium channel blockers (ATC class)","","on_calcium_blocker, FALLBACK only",
+  "GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline","Superseded by the Calcium_Blockers export."),
+r(21604753,"Psychostimulants (ATC class)","","on_stimulants, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604686,"Antidepressants (ATC class)","","on_antidepressants, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline","Superseded by the Antidepressants export."),
+r(21604490,"Antipsychotics (ATC class)","","on_antipsychotics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline","Superseded by the Antipsychotics export."),
+r(21604600,"Anxiolytics (ATC class)","","on_anxiolytics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604565,"Anxiolytics (ATC class, second id)","","on_anxiolytics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604635,"Hypnotics/sedatives (ATC class)","","on_hypnotics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604653,"Hypnotics/sedatives (ATC class)","","on_hypnotics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604685,"Hypnotics/sedatives (ATC class)","","on_hypnotics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21604661,"Hypnotics/sedatives (ATC class)","","on_hypnotics, FALLBACK only","GERD Data Prep R9.R","INACTIVE","Inherited from IBS pipeline",""),
+r(21600095,"Proton pump inhibitors (ATC class)","","PPI exposure","GERD Pharmacologics Data Upload.R","OPTIONAL SCRIPT","Inherited from IBS pipeline",
+  "Only used by the optional pharmacologics pull. The main build derives on_ppi from ingredient names instead."),
+r(21600096,"H2-receptor antagonists (ATC class)","","H2RA exposure","GERD Pharmacologics Data Upload.R","OPTIONAL SCRIPT","Inherited from IBS pipeline","")
+)
+
+TB$concept_id <- ifelse(is.na(TB$concept_id), "(none supplied)", format(TB$concept_id, scientific = FALSE, trim = TRUE))
+
+utils::write.csv(TB, "CONCEPT_ID_TABLE.csv", row.names = FALSE, na = "")
+
+## ---- markdown ---------------------------------------------------------------
+esc <- function(x) gsub("|", "\\|", x, fixed = TRUE)
+md <- c(
+"# GERD project — concept ID verification table", "",
+paste0("_Generated ", format(Sys.Date()), " from the code in this repository._"), "",
+"Every OMOP concept ID the project uses, what the code believes it means, and where",
+"the ID came from. Please check the **name** against the ID in the All of Us Cohort",
+"Builder and mark the `VERIFY_ok` column in the accompanying CSV.", "",
+"## Please look at these first", "",
+"| # | Item | Why |",
+"|---|---|---|",
+"| 1 | **Gastric cancer ID is missing** | The expert asked to exclude gastric cancer. No ID was supplied, so it is matched by name only — which silently does nothing if such rows are not in the EHR export. |",
+"| 2 | **Heller / POEM / myotomy have no IDs** | Excluded by name matching on the procedure export. An ID match is exact; a name match is not. |",
+"| 3 | **Three comorbidity IDs conflict** | anxiety `442077` vs `441542`, diabetes `201826` vs `201820`, heart failure `319835` vs `316139`. The first of each is active; the second is an inactive legacy fallback. Confirm the active one is right. |",
+"| 4 | **Oesophagitis scope** | Descendants of `30753` may include eosinophilic, infectious, pill-induced and radiation oesophagitis. This defines an outcome. |",
+"| 5 | **Fundoplication `4235008`** | Currently excluded as foregut surgery. It is anti-reflux rather than reflux-generating — confirm this is intended. |",
+"", "## Status key", "",
+"| Status | Meaning |",
+"|---|---|",
+"| `ACTIVE` | Used by the current pipeline |",
+"| `SUPERSEDED` | Was an outcome; now only recognised as a GERD code |",
+"| `INACTIVE` | Legacy fallback path that the current build never reaches |",
+"| `FALLBACK ONLY` | Used only if the preferred source is absent |",
+"| `OPTIONAL SCRIPT` | Used only by an optional standalone pull |",
+"| `MISSING` | Needed but not supplied |",
+"", "## Full table", "",
+"| Concept ID | Name in code | Vocab code | Role | Status | ID source | Notes |",
+"|---|---|---|---|---|---|---|",
+paste0("| `", TB$concept_id, "` | ", esc(TB$name_in_code), " | ", esc(TB$vocab_code),
+       " | ", esc(TB$role), " | ", esc(TB$status), " | ", esc(TB$id_source),
+       " | ", esc(TB$notes), " |"),
+"", "---", "",
+paste0("**", nrow(TB), " rows.** ",
+       sum(grepl("^ACTIVE", TB$status)), " active, ",
+       sum(grepl("INACTIVE|SUPERSEDED", TB$status)), " inactive or superseded, ",
+       sum(grepl("MISSING|NAME-MATCHED", TB$status)), " needing attention."), "",
+"Annotate `CONCEPT_ID_TABLE.csv` — it has empty `VERIFY_ok` and",
+"`VERIFY_correct_id` columns for exactly this purpose.")
+writeLines(md, "CONCEPT_ID_TABLE.md")
+
+cat("Wrote CONCEPT_ID_TABLE.csv and CONCEPT_ID_TABLE.md (", nrow(TB), " rows)\n", sep = "")
+cat("  active            :", sum(grepl("^ACTIVE", TB$status)), "\n")
+cat("  inactive/legacy   :", sum(grepl("INACTIVE|SUPERSEDED", TB$status)), "\n")
+cat("  need attention    :", sum(grepl("MISSING|NAME-MATCHED", TB$status)), "\n")
