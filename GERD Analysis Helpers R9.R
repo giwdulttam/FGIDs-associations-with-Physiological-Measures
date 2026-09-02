@@ -126,6 +126,34 @@ gerd_outcome_columns <- function() {
     "has_eso_any_record")
 }
 
+# Compare monitoring coverage between cases and non-cases. This is the quantity
+# that made the collaborator's activity table look wrong: with a >=30-valid-day
+# floor and a timing-based case definition, cases carry far more monitoring than
+# non-cases, because a short record cannot satisfy the definition at all.
+gerd_coverage_check <- function(df, outcome_col, coverage_var) {
+  if (is.null(coverage_var) || !coverage_var %in% names(df)) return(invisible(NULL))
+  y <- df[[outcome_col]] %in% TRUE
+  if (!any(y) || !any(!y)) return(invisible(NULL))
+  a <- stats::median(df[[coverage_var]][y],  na.rm = TRUE)   # cases
+  b <- stats::median(df[[coverage_var]][!y], na.rm = TRUE)   # non-cases
+  ratio <- if (is.finite(b) && b > 0) a / b else NA_real_
+  cat("\n[coverage] ", coverage_var, ": cases median ", format(round(a), big.mark = ","),
+      " vs non-cases ", format(round(b), big.mark = ","),
+      "  ratio ", sprintf("%.2f", ratio), "\n", sep = "")
+  if (is.finite(ratio) && ratio >= GERD_COVERAGE_WARN_RATIO) {
+    cat("[coverage] *** Cases have ", sprintf("%.1f", ratio),
+        "x the monitoring of non-cases. ***\n", sep = "")
+    cat("[coverage] This is expected under the '", GERD_PRIMARY_DEF, "' definition: a\n", sep = "")
+    cat("[coverage] participant whose record is shorter than the ",
+        GERD_POST_FITBIT_LAG_DAYS, "-day lag cannot\n", sep = "")
+    cat("[coverage] become a case, so coverage predicts the outcome by construction.\n")
+    cat("[coverage] It also shapes the exposure, which is averaged over those days.\n")
+    cat("[coverage] Consider: GERD_ADJUST_COVERAGE <- TRUE, or GERD_PRIMARY_DEF <- \"ever\",\n")
+    cat("[coverage] and compare. Report whichever you choose, with this ratio.\n")
+  }
+  invisible(c(cases = a, controls = b, ratio = ratio))
+}
+
 # One consistent case-count block for every analysis file.
 gerd_cohort_summary <- function(df, label) {
   n1 <- function(v) if (v %in% names(df)) sum(df[[v]] %in% TRUE) else NA_integer_
@@ -334,6 +362,23 @@ GERD_ADJ_COVARS_BASE <- c(
   "has_pud"
 )
 GERD_USE_COMORBIDITY_INDEX <- FALSE
+
+# --- Monitoring coverage as a confounder ----------------------------------------
+# The post-Fitbit case definition requires the first diagnosis to fall at least
+# GERD_POST_FITBIT_LAG_DAYS after the first Fitbit record. A participant with a
+# short monitoring record therefore CANNOT become a case, which makes coverage
+# (valid nights / valid days) associated with the outcome by construction. It
+# also shapes the exposure, since every average is computed over those same days.
+#
+# Setting this TRUE adds the coverage variable to the adjustment set. It is FALSE
+# by default so the primary analysis is unchanged; turn it on as a sensitivity
+# analysis and compare. gerd_coverage_check() below reports the imbalance either
+# way, so it can never pass unnoticed.
+GERD_ADJUST_COVERAGE <- FALSE
+
+# Ratio of median coverage (cases vs non-cases) above which the imbalance is
+# called out as material rather than incidental.
+GERD_COVERAGE_WARN_RATIO <- 1.5
 GERD_CCI_COVARIATE <- "cci_cat"
 GERD_ADJ_COVARS <- if (GERD_USE_COMORBIDITY_INDEX)
   c(setdiff(GERD_ADJ_COVARS_BASE, c("has_diabetes", "has_pud")), GERD_CCI_COVARIATE) else
@@ -1154,6 +1199,14 @@ analyze_all_outcomes <- function(modeling_df, exposures,
     cat("### OUTCOME:", oc$col, "(", oc$labels[2], ")  [", fs, "]\n")
     cat("###", .nc, "cases /", nrow(df_o), "participants\n")
     cat("##################################################################\n")
+    gerd_coverage_check(df_o, oc$col, coverage_var)
+
+    covars_o <- covars
+    if (isTRUE(GERD_ADJUST_COVERAGE) && !is.null(coverage_var) &&
+        coverage_var %in% names(df_o) && !coverage_var %in% covars_o) {
+      covars_o <- c(covars_o, coverage_var)
+      cat("[coverage] adjusting for ", coverage_var, " (GERD_ADJUST_COVERAGE = TRUE)\n", sep = "")
+    }
 
     t1  <- manuscript_table1(df_o, oc$col, oc$labels, file_stub = fs)
     print(t1)
@@ -1162,13 +1215,13 @@ analyze_all_outcomes <- function(modeling_df, exposures,
                              cutoff_ref = modeling_df)
     print(t2)
     s1  <- manuscript_supp_univariate(df_o, oc$col, oc$labels, exposures, file_stub = fs)
-    res <- run_models_for_outcome(df_o, oc$col, oc$labels, exposures, covars, cci_label,
+    res <- run_models_for_outcome(df_o, oc$col, oc$labels, exposures, covars_o, cci_label,
                                   caption_prefix = oc$labels[2])
     s2  <- manuscript_supp_multivariable(res, df_o, exposures, file_stub = fs)
     f1  <- forest_plot_exposures(res, title = paste("Adjusted odds ratios:", oc$labels[2]),
                                  file_stub = fs)
     f2  <- gvif_plot(res, file_stub = fs)
-    dg  <- diagnostics_summary(res, df_o, oc$col, covars, file_stub = fs)
+    dg  <- diagnostics_summary(res, df_o, oc$col, covars_o, file_stub = fs)
 
     out[[onm]] <- list(table1 = t1, table2 = t2, supp_univariate = s1,
                        models = res, supp_multivariable = s2,

@@ -305,6 +305,35 @@ A `[check]` message appears if the exclusion removes >75% of the GERD group —
 that would suggest the descendants of `30753` are catching non-reflux
 oesophagitis.
 
+**Monitoring coverage — read this one.**
+
+```
+[coverage] n_valid_days: cases median 1,108 vs non-cases 240  ratio 4.62
+[coverage] *** Cases have 4.6x the monitoring of non-cases. ***
+```
+
+Printed for every outcome. A large ratio is **expected**, not a bug: under the
+post-Fitbit definition the first diagnosis must fall ≥180 days after Fitbit
+start, so a participant with a short record *cannot* be a case. Coverage
+therefore predicts the outcome by construction — and it also shapes the
+exposure, since every average is computed over those same days.
+
+It bites hardest on **activity**, because the ≥30-valid-day floor is much lower
+than the ≥180-night sleep floor, so the coverage distribution is far wider and
+the selection has more room to act.
+
+Two ways to handle it, both worth running and comparing:
+
+```r
+GERD_ADJUST_COVERAGE <- TRUE     # add coverage to the adjustment set
+```
+
+```r
+GERD_PRIMARY_DEF <- "ever"       # drop the timing rule (reintroduces reverse causation)
+```
+
+Report whichever you choose, and quote the ratio in the methods.
+
 **Per-outcome sample sizes:**
 
 ```
