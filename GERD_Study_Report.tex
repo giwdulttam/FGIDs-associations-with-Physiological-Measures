@@ -32,6 +32,11 @@
 }
 
 \DeclareMathOperator{\logit}{logit}
+% Indicator function. A blackboard-bold digit is NOT valid here -- amssymb's font
+% has uppercase letters only, and the digit falls through to an unrelated glyph.
+\IfFileExists{dsfont.sty}{%
+  \usepackage{dsfont}\newcommand{\ind}{\mathds{1}}}{%
+  \newcommand{\ind}{\mathbf{1}}}
 \providecommand{\Pr}{\mathrm{Pr}}
 
 % ---- Colors ----
@@ -160,7 +165,7 @@ Exposure set & Outcome \code{has_gerd_any} & Outcome \code{has_esophagitis} \\
 \caption{The six analysis configurations formed by crossing three exposure sets with the two parallel outcome phenotypes. Every configuration is fit with the identical modeling engine.}
 \end{table}
 
-To guarantee that all six configurations use identical statistics, definitions, and reporting, the design centralizes methodology in a shared engine file, ``GERD Analysis Helpers R9.R''. That helper defines the outcome objects and factor labels (\code{GERD_OUTCOMES} with ``No GERD''/``GERD'' and ``No oesophagitis''/``Oesophagitis''), the exposure lists (\code{SLEEP_EXPOSURES}, \code{ACTIVITY_EXPOSURES}), the adjustment set (\code{GERD_ADJ_COVARS}, which adds \code{has_pud} and \code{has_ibs} relative to the antecedent IBS study and uses the Charlson Comorbidity Index categorically by default), the master label lookup (\code{GERD_LABELS}), and the reusable functions \code{prep_modeling_df()}, \code{descriptive_table()}, \code{univariate_table()}, \code{run_models_for_outcome()}, and \code{run_diagnostics()}. A single dispatcher, \code{analyze_all_outcomes()}, loops over both outcomes so that each analysis file merely builds its data frame, sources the helper, and calls the dispatcher.
+To guarantee that all six configurations use identical statistics, definitions, and reporting, the design centralizes methodology in a shared engine file, ``GERD Analysis Helpers R9.R''. That helper defines the outcome objects and factor labels (\code{GERD_OUTCOMES} with ``No GERD''/``GERD'' and ``No oesophagitis''/``Oesophagitis''), the exposure lists (\code{SLEEP_EXPOSURES}, \code{ACTIVITY_EXPOSURES}), the adjustment set (\code{GERD_ADJ_COVARS}, which adds the reflux-specific and expert-required terms described in the Covariates section), the master label lookup (\code{GERD_LABELS}), and the reusable functions \code{prep_modeling_df()}, \code{descriptive_table()}, \code{univariate_table()}, \code{run_models_for_outcome()}, and \code{run_diagnostics()}. A single dispatcher, \code{analyze_all_outcomes()}, loops over both outcomes so that each analysis file merely builds its data frame, sources the helper, and calls the dispatcher.
 
 The deliverables are all new R files; no existing notebook is edited:
 
@@ -224,9 +229,9 @@ for separation and unstable standard errors. Reporting both phenotypes with the 
 
 \subsection{Rationale and the All of Us Research Opportunity}
 
-Prior evidence linking sleep and activity to reflux is dominated by cross-sectional self-report, small clinical samples, and endpoints that rarely separate symptom-defined from erosive disease. The All of Us Research Program provides a distinctive opportunity to address these gaps at scale: it links longitudinal, device-recorded Fitbit sleep and activity data to a rich, standardized (OMOP-mapped) EHR and to detailed survey and physical-measurement data across a large, deliberately diverse participant population. This enables objectively measured exposures, EHR-based outcome phenotyping with an explicit $\geq 2$-record rule, adjustment for an extensive covariate set (demographics, socioeconomic factors, alcohol, smoking, BMI, Charlson Comorbidity Index, and a panel of comorbidities and relevant medication-use flags), and reflux-specific confounders including peptic ulcer disease (\code{has_pud}) and irritable bowel syndrome (\code{has_ibs}), the latter reflecting the known overlap of reflux with other disorders of gut--brain interaction.
+Prior evidence linking sleep and activity to reflux is dominated by cross-sectional self-report, small clinical samples, and endpoints that rarely separate symptom-defined from erosive disease. The All of Us Research Program provides a distinctive opportunity to address these gaps at scale: it links longitudinal, device-recorded Fitbit sleep and activity data to a rich, standardized (OMOP-mapped) EHR and to detailed survey and physical-measurement data across a large, deliberately diverse participant population. This enables objectively measured exposures, EHR-based outcome phenotyping with an explicit $\geq 2$-record rule, adjustment for an extensive covariate set (demographics, socioeconomic factors, alcohol, smoking, BMI, and a panel of comorbidities and medication-use flags), and reflux-specific confounders including peptic ulcer disease (\code{has_pud}), obstructive sleep apnoea (\code{has_sleep_apnea}) and sleep medication (\code{on_sleep_med}).
 
-The design mirrors the project's antecedent IBS sleep study, constipation activity study, and constipation outcome upload, but adapts them for reflux: it swaps the IBS outcome for the GERD outcomes and adds the erosive subset, sources outcomes from a dedicated GERD pull (necessary because \code{R9_condition_df.rds} does not contain GERD), removes all IBS-subtype and multinomial logic, adds \code{has_pud} and \code{has_ibs} as covariates, harmonizes \code{R9_*} file naming, extends the work to activity and combined analyses, and centralizes all statistics in the shared helper so that every configuration is estimated identically.
+The design mirrors the project's antecedent IBS sleep study, constipation activity study, and constipation outcome upload, but adapts them for reflux: it swaps the IBS outcome for the GERD outcomes and adds the erosive subset, sources outcomes from a dedicated GERD pull (necessary because \code{R9_condition_df.rds} does not contain GERD), removes all IBS-subtype and multinomial logic, adds \code{has_pud}, \code{has_sleep_apnea}, \code{on_sleep_med} and \code{on_narcotic} as covariates, harmonizes \code{R9_*} file naming, extends the work to activity and combined analyses, and centralizes all statistics in the shared helper so that every configuration is estimated identically.
 
 \subsection{Research Question and Directional Hypothesis}
 
@@ -287,7 +292,7 @@ Primary model & Multivariable logistic regression; $\exp(\beta_j)$ is the adjust
 \addlinespace
 Covariate anchor & Pre-Fitbit window; combined cohort anchored to the earliest Fitbit date across sleep and activity streams ($\mathrm{pmin}$) \\
 \addlinespace
-Covariates & Demographics, socioeconomic status, median BMI, Charlson Comorbidity Index, comorbidities incl. \code{has_pud} and \code{has_ibs}, and medication-use flags \\
+Covariates & Demographics, socioeconomic status, median BMI, comorbidities incl. \code{has_pud} and \code{has_sleep_apnea}, and medication-use flags incl. \code{on_sleep_med} and \code{on_narcotic} \\
 \addlinespace
 Missing data & Binary EHR indicators coalesced NA $\rightarrow$ FALSE; survey/measurement missingness retained as an explicit Missing level \\
 \addlinespace
@@ -419,7 +424,7 @@ The helper file is the single canonical definition of every modeling choice. It 
   \item \code{SLEEP_EXPOSURES} and \code{ACTIVITY_EXPOSURES} -- the canonical exposure inventories
     consumed by the sleep, activity, and combined files.
   \item \code{GERD_ADJ_COVARS} -- the shared adjustment set (which adds \code{has_pud} and
-    \code{has_ibs} relative to the sibling IBS study and uses the categorical Charlson Comorbidity
+    the expert-required terms relative to the sibling IBS study; the partial comorbidity
     Index by default), so every model adjusts for the same covariates.
   \item \code{GERD_LABELS} -- the master label lookup used in all output tables.
   \item \code{prep_modeling_df()} -- builds the collapsed factor covariates and relevels each
@@ -449,7 +454,7 @@ Third, auditability: the exact model that produced any table can be traced to on
 rather than to per-file copies that might drift. The design mirrors the project's IBS sleep study,
 constipation activity study, and constipation outcome upload, but removes all IBS-subtype logic
 (subtype flags and multinomial models), swaps the IBS covariate for the GERD outcomes plus the added
-\code{has_esophagitis}, adds \code{has_pud} and \code{has_ibs} as covariates, standardizes \code{R9_}
+\code{has_esophagitis}, adds the reflux-specific covariates, standardizes \code{R9_}
 naming, extends the analysis to activity and combined exposures, and centralizes the modeling engine
 in the shared helper.
 
@@ -1043,8 +1048,8 @@ sleep quartile and one activity quartile simultaneously, so each exposure is adj
 domain in addition to the full covariate set. For a sleep exposure $S$, an activity exposure $A$, and
 covariates $\mathbf{Z}$,
 \[
-\logit\!\big(\Pr[Y=1]\big) = \beta_0 + \sum_{j=2}^{4}\beta^S_j \mathbb{1}[S{=}Q_j]
-+ \sum_{j=2}^{4}\beta^A_j \mathbb{1}[A{=}Q_j] + \sum_k \gamma_k Z_k .
+\logit\!\big(\Pr[Y=1]\big) = \beta_0 + \sum_{j=2}^{4}\beta^S_j \ind[S{=}Q_j]
++ \sum_{j=2}^{4}\beta^A_j \ind[A{=}Q_j] + \sum_k \gamma_k Z_k .
 \]
 Four primary sleep$\times$activity pairs are examined: minutes-asleep$\times$steps,
 efficiency$\times$very-active, deep-sleep$\times$total-active, and REM$\times$sedentary. These pairings
@@ -1169,7 +1174,7 @@ Anthropometric & median BMI; nearest BMI within $\pm 180$ days & \code{R9_measur
 Psychiatric / cardiometabolic & depression, anxiety, diabetes, hypertension, heart failure, MI, stroke, COPD, sleep apnea & \code{R9_condition_df} via \code{create_covariate_status()}. \\
 Comorbidity burden & Charlson Comorbidity Index (continuous \& categorical) & \code{cci_scored_sleep.rds} / \code{R9_cci_scored.rds}. \\
 Medications & beta-blockers, calcium-channel blockers, stimulants, antidepressants, antipsychotics, anxiolytics, hypnotics & \code{R9_drug_df}; $\geq 2$ dates within 12 months before first Fitbit. \\
-\textbf{GI (GERD-specific)} & peptic ulcer disease (\code{has_pud}); IBS (\code{has_ibs}) & \code{R9_pud_status.rds}; IBS built from \code{R9_condition_df} as a covariate. \\
+\textbf{GI (GERD-specific)} & peptic ulcer disease (\code{has_pud}) & From the condition export via concept 4027663. \\
 \bottomrule
 \end{tabular}
 \caption{Covariate inventory. The final row is the GERD-specific addition relative to the IBS study.}
@@ -1289,7 +1294,9 @@ announces its choice for every covariate block, printing a \code{[load]} line na
 or a \code{[miss]} line listing the candidates it could not find before falling back. The provenance
 of every covariate in the final frame is therefore visible in the run log rather than implicit.
 
-The one covariate that is always rebuilt rather than reused is \code{has_ibs}. The available
+The one covariate that is always rebuilt rather than reused is \code{has_ibs}, which is retained in
+the data layer but is \emph{not} in the adjustment set: IBS is absent from this workspace's concept
+set, so the flag was constant and contributed nothing. The available
 \code{ibs_status} objects encode the IBS \emph{outcome} definition (at least two records at any time),
 whereas as a covariate IBS must follow the same pre-Fitbit, two-distinct-dates rule as the other
 comorbidities. The pipeline therefore derives it from \code{R9_condition_df}, loading that table only
@@ -1490,7 +1497,7 @@ Every configuration is executed by \code{GERD Analysis Helpers R9.R}. Its export
 functions are:
 \begin{itemize}[leftmargin=1.4em,itemsep=1pt]
   \item \code{GERD_OUTCOMES} --- the two outcomes and their factor labels; \code{SLEEP_EXPOSURES} and
-  \code{ACTIVITY_EXPOSURES}; \code{GERD_ADJ_COVARS} (adds \code{has_pud}, \code{has_ibs}); and
+  \code{ACTIVITY_EXPOSURES}; \code{GERD_ADJ_COVARS}; and
   \code{GERD_LABELS} (master labels).
   \item \code{prep_modeling_df(df, exposures)} --- builds collapsed factor covariates (race, ethnicity,
   sex, education, income, alcohol, smoking, Charlson category) and relevels each quartile exposure to
@@ -1672,20 +1679,22 @@ same baseline, so ORs are comparable across the sleep, activity, and combined an
 \subsection{Univariable models}
 Each candidate predictor is regressed on the outcome individually via
 \code{gtsummary::tbl_uvregression} with \code{family = binomial} and exponentiated coefficients,
-yielding unadjusted odds ratios with 95\% CIs for every exposure and covariate, including the new
-\code{has_pud} and \code{has_ibs} terms.
+yielding unadjusted odds ratios with 95\% CIs for every exposure and covariate, including the
+GERD-specific \code{has_pud}, \code{has_sleep_apnea}, \code{on_sleep_med} and \code{on_narcotic}
+terms.
 
 \subsection{Multivariable models}
 Because the exposures within a set are collinear, a \emph{separate} adjusted model is fit for each. For
 exposure $X$ (a quartile factor with reference Q1) and covariate vector $\mathbf{Z}$,
 \[
-\logit\!\big(\Pr[Y=1]\big) = \beta_0 + \beta_2 \mathbb{1}[X{=}Q_2] + \beta_3 \mathbb{1}[X{=}Q_3]
-+ \beta_4 \mathbb{1}[X{=}Q_4] + \sum_{k} \gamma_k Z_k ,
+\logit\!\big(\Pr[Y=1]\big) = \beta_0 + \beta_2 \ind[X{=}Q_2] + \beta_3 \ind[X{=}Q_3]
++ \beta_4 \ind[X{=}Q_4] + \sum_{k} \gamma_k Z_k ,
 \]
 so $e^{\beta_j}$ is the adjusted odds ratio for quartile $j$ versus Q1. The adjustment set is
 \begin{center}
 \code{age_cat, sex, race, ethnicity, education, income, alcohol, smoking, median_bmi,}\\
-\code{has_depression, has_anxiety, has_pud, has_ibs, cci_cat}.
+\code{has_sleep_apnea, on_sleep_med, on_narcotic, has_depression, has_anxiety,}\\
+\code{has_diabetes, has_hypertension, has_pud}.
 \end{center}
 For each exposure the engine fits a \emph{full} model and a \emph{backward} model selected by AIC
 (\code{MASS::stepAIC}) in which the exposure is forced to remain (the selection lower scope is
@@ -1774,7 +1783,7 @@ C5, C2, and C4.
 Each adjusted model is a binomial generalized linear model with the canonical logit link. Writing
 $p_i = \Pr[Y_i = 1 \mid X_i, Z_i]$ for participant $i$, the model is
 \[
-\log\!\frac{p_i}{1-p_i} = \beta_0 + \sum_{j=2}^{4}\beta_j\,\mathbb{1}[X_i = Q_j] + \sum_k \gamma_k Z_{ik},
+\log\!\frac{p_i}{1-p_i} = \beta_0 + \sum_{j=2}^{4}\beta_j\,\ind[X_i = Q_j] + \sum_k \gamma_k Z_{ik},
 \]
 estimated by maximum likelihood via iteratively reweighted least squares (R's \code{glm}). The
 quartile exposure enters as a three-parameter contrast against Q1, so the model makes no assumption of
@@ -2295,7 +2304,7 @@ labels; output filenames $\rightarrow$ \code{R9_final_analysis_*_gerd_df.rds}. \
 \textbf{Removed} & All IBS-subtype logic (subtype flags, most-frequent/tie-break assignment,
 mutually-exclusive \code{has_ibs_c/d/m/general}, multinomial models); the standalone severe-IBS block
 was replaced by the optional, guarded treated-GERD section. \\
-\textbf{Added} & \code{has_esophagitis} as a second outcome; \code{has_pud} and \code{has_ibs}
+\textbf{Added} & \code{has_esophagitis} as a second outcome; \code{has_pud}, \code{has_sleep_apnea}, \code{on_sleep_med} and \code{on_narcotic}
 covariates; the activity and combined analyses; the mutually-adjusted sleep$+$activity models; and the
 shared modeling engine. \\
 \textbf{Fixed} & Consistent \code{R9_*} inputs throughout; one canonical
@@ -2775,7 +2784,7 @@ fit_combined_pair <- function(df, outcome_col, outcome_labels, sleep_expo, act_e
 \code{has_gerd_no_eso_dates} & Sensitivity: $\geq 2$ GERD records on distinct dates. \\
 \code{has_post_fitbit_gerd} & Temporal sensitivity: first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes. \\
 \code{severe_gerd_binary} & Optional: GERD \emph{and} $\geq 2$ post-diagnosis PPI/$H_2$RA dates. \\
-\code{has_pud}, \code{has_ibs} & GERD-specific gastrointestinal covariates. \\
+\code{has_pud} & GERD-specific gastrointestinal covariate. \\
 \code{has_depression} \ldots \code{has_sleep_apnea} & Pre-Fitbit, $\geq 2$-distinct-date comorbidity indicators. \\
 \code{on_beta_blocker} \ldots \code{on_hypnotics} & Sustained pre-exposure medication-use flags. \\
 \code{cci_score} / \code{cci_cat} & Charlson Comorbidity Index, continuous and categorical (0, 1--2, 3--4, 5+). \\
@@ -2982,7 +2991,7 @@ reference documents each one's role, inputs, and outputs.
 \code{ACTIVITY_EXPOSURES} & Character vector of the seven activity quartile column names. \\
 \code{GERD_BINARY_COVARS} & Binary covariates shown as No/Yes and used as 0/1 predictors. \\
 \code{GERD_LABELS} & Named character vector mapping variable names to display labels. \\
-\code{GERD_ADJ_COVARS} & The adjustment covariate vector (adds \code{has_pud}, \code{has_ibs}; CCI categorical). \\
+\code{GERD_ADJ_COVARS} & The adjustment covariate vector (see the Covariates section). \\
 \code{prep_modeling_df(df, exposures)} & Input: a final analysis frame and its exposure names. Builds
 collapsed factor covariates and relevels quartiles to Q1--Q4 (Q1 reference). Output: the same frame with
 model-ready factors. \\
