@@ -147,7 +147,10 @@ setwd(GERD_DATA_DIR)
               activity = "Activity and GERD Analysis File R9.R",
               combined = "Activity Sleep and GERD Analysis File R9.R")
 .results <- list()
-for (nm in intersect(GERD_RUN, names(.scripts))) {
+.todo  <- intersect(GERD_RUN, names(.scripts))
+.wall  <- Sys.time()
+for (.k in seq_along(.todo)) {
+  nm <- .todo[.k]
   cat("\n\n############################################################\n")
   cat("###  ", toupper(nm), "  --  ", .scripts[[nm]], "\n", sep = "")
   cat("############################################################\n")
@@ -155,8 +158,14 @@ for (nm in intersect(GERD_RUN, names(.scripts))) {
   .results[[nm]] <- tryCatch({
     source(file.path(GERD_CODE_DIR, .scripts[[nm]]), echo = FALSE); TRUE
   }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e), "\n"); FALSE })
+  .el <- as.numeric(difftime(Sys.time(), .wall, units = "secs"))
+  .eta <- .el / .k * (length(.todo) - .k)
   cat("\n---", nm, if (isTRUE(.results[[nm]])) "COMPLETED" else "FAILED", "in",
       round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
+  cat(sprintf("=== STEP 2 PROGRESS: %d/%d cohorts | elapsed %s | %s ===\n",
+      .k, length(.todo), gerd_dur(.el),
+      if (.k < length(.todo)) paste0("ETA ", gerd_dur(.eta), ", total ~", gerd_dur(.el + .eta))
+      else paste0("all cohorts done in ", gerd_dur(.el))))
 }
 
 ## ---- Summary -----------------------------------------------------------------

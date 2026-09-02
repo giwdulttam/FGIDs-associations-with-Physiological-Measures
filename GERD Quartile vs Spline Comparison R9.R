@@ -197,9 +197,12 @@ gerd_compare_all <- function(modeling_df, exposures, covars = GERD_ADJ_COVARS,
     df_o <- modeling_df
     if (is.function(oc$restrict)) df_o <- oc$restrict(df_o)
     if (sum(df_o[[oc$col]] %in% TRUE) < GERD_MIN_CASES) next
-    for (q in intersect(exposures, names(df_o))) {
+    .qs <- intersect(exposures, names(df_o))
+    .tick <- gerd_progress(length(.qs), paste0("compare: ", oc$col))
+    for (q in .qs) {
       r <- tryCatch(gerd_compare_one(df_o, oc$col, q, covars = covars),
                     error = function(e) NULL)
+      .tick(q)
       if (is.null(r)) next
       r$outcome <- onm
       rows[[length(rows) + 1]] <- r

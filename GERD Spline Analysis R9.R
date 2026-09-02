@@ -385,9 +385,10 @@ gerd_spline_analysis <- function(modeling_df, exposures,
     if (!length(src)) { cat("   no continuous exposure columns found\n"); next }
 
     fits <- list()
+    .tick <- gerd_progress(length(src), paste0("splines: ", oc$col))
     for (e in src) {
       f <- gerd_fit_spline(df_o, oc$col, e, covars = covars)
-      if (is.null(f)) next
+      if (is.null(f)) { .tick(paste0("skipped ", e)); next }
       fits[[e]] <- f
       gerd_spline_plot(f, outcome_label = oc$labels[2], file_stub = fs)
       rows[[length(rows) + 1]] <- data.frame(
@@ -409,6 +410,7 @@ gerd_spline_analysis <- function(modeling_df, exposures,
       # Curve written out so the figures can be redrawn without refitting.
       utils::write.csv(f$curve, file.path(GERD_SPLINE_OUTDIR,
         paste0(fs, "_", e, "_curve.csv")), row.names = FALSE)
+      .tick(e)
     }
     results[[onm]] <- fits
   }

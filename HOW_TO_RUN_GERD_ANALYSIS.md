@@ -35,6 +35,21 @@ source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")
 Results land in `~/workspace/gerd_build/manuscript_output/` (quartiles) and
 `manuscript_output_splines/` (splines).
 
+**Every step reports progress and an ETA**, so you can tell early whether a
+multi-hour run is on track:
+
+```
+sleepLevel: 96/500 shards  (19%, 2.8 MB/s)  ETA 24.1m  of ~29.8m     <- step 1
+   [models: has_gerd_any] 5/8 (62%)  elapsed 15s  ETA 9s  of ~23s    <- step 2
+[outcomes: sleep] 1/2 (50%)  elapsed 35s  ETA 35s  of ~69s
+=== STEP 2 PROGRESS: 1/3 cohorts | elapsed 68s | ETA 2.3m, total ~3.4m ===
+   [splines: has_gerd_any] 4/8 (50%) elapsed 8s  ETA 8s  of ~16s     <- step 3
+   [compare: has_gerd_any] 4/8 (50%) elapsed 6s  ETA 6s  of ~12s
+```
+
+Three levels: per model, per outcome, and per cohort. The first estimates are
+rough and settle after a few items.
+
 > **Progress and ETA.** Every batch prints how far through it is, the current
 > throughput, and a projected finish:
 >

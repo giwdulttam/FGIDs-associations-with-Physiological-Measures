@@ -86,8 +86,11 @@ cat("[4/4] Fitting spline models: ", paste(GERD_RUN, collapse = ", "), "\n", sep
 .cov  <- list(sleep = "n_valid_nights", activity = "n_valid_days",
               combined = "n_valid_nights")
 
-.res <- list()
-for (nm in intersect(GERD_RUN, names(.frames))) {
+.res  <- list()
+.todo <- intersect(GERD_RUN, names(.frames))
+.wall <- Sys.time()
+for (.k in seq_along(.todo)) {
+  nm <- .todo[.k]
   f <- file.path(GERD_DATA_DIR, .frames[[nm]])
   if (!file.exists(f)) {
     cat("\n--- skipping ", nm, ": ", basename(f), " not found ---\n", sep = ""); next
@@ -104,8 +107,14 @@ for (nm in intersect(GERD_RUN, names(.frames))) {
     gerd_compare_all(md, exposures = .expo[[nm]], stub = nm)
     sp
   }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e)); NULL })
+  .el <- as.numeric(difftime(Sys.time(), .wall, units = "secs"))
+  .eta <- .el / .k * (length(.todo) - .k)
   cat("\n---", nm, if (is.null(.res[[nm]])) "FAILED" else "COMPLETED", "in",
       round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
+  cat(sprintf("=== STEP 3 PROGRESS: %d/%d cohorts | elapsed %s | %s ===\n",
+      .k, length(.todo), gerd_dur(.el),
+      if (.k < length(.todo)) paste0("ETA ", gerd_dur(.eta), ", total ~", gerd_dur(.el + .eta))
+      else paste0("all cohorts done in ", gerd_dur(.el))))
 }
 
 ## ---- summary -----------------------------------------------------------------

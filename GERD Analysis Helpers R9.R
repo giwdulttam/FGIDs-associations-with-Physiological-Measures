@@ -154,6 +154,38 @@ gerd_coverage_check <- function(df, outcome_col, coverage_var) {
   invisible(c(cases = a, controls = b, ratio = ratio))
 }
 
+# ==============================================================================
+# Progress reporting
+# ==============================================================================
+# These steps take tens of minutes, so every loop over exposures or outcomes
+# reports where it is and when it expects to finish. Printing only -- no
+# computation is affected.
+gerd_dur <- function(secs) {
+  if (!is.finite(secs) || secs < 0) return("?")
+  if (secs < 90)   return(sprintf("%.0fs", secs))
+  if (secs < 5400) return(sprintf("%.1fm", secs / 60))
+  sprintf("%.1fh", secs / 3600)
+}
+
+# Returns a function; call it once per completed item. ETA is projected from the
+# mean time per item so far, which is the right model here because the items
+# (one model fit per exposure) cost roughly the same.
+gerd_progress <- function(total, label, indent = "   ") {
+  t0 <- Sys.time(); i <- 0L
+  function(note = "") {
+    i <<- i + 1L
+    el  <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+    eta <- if (i > 0) el / i * (total - i) else NA_real_
+    cat(sprintf("%s[%s] %d/%d (%.0f%%)  elapsed %s  %s%s\n", indent, label, i, total,
+                100 * i / max(total, 1L), gerd_dur(el),
+                if (i < total) paste0("ETA ", gerd_dur(eta),
+                                      "  of ~", gerd_dur(el + eta))
+                else paste0("done in ", gerd_dur(el)),
+                if (nzchar(note)) paste0("  ", note) else ""))
+    flush.console(); invisible(NULL)
+  }
+}
+
 # One consistent case-count block for every analysis file.
 gerd_cohort_summary <- function(df, label) {
   n1 <- function(v) if (v %in% names(df)) sum(df[[v]] %in% TRUE) else NA_integer_
@@ -975,7 +1007,9 @@ run_models_for_outcome <- function(df, outcome_col, outcome_labels, exposures,
          covars_used = covars_use, covars_dropped = guard$dropped)
   }
 
-  results <- purrr::map(present_expo, fit_one)
+  .tick <- gerd_progress(length(present_expo),
+                         paste0("models: ", outcome_col))
+  results <- purrr::map(present_expo, function(e) { r <- fit_one(e); .tick(e); r })
   names(results) <- present_expo
 
   for (nm in names(results)) {
@@ -1167,7 +1201,9 @@ analyze_all_outcomes <- function(modeling_df, exposures,
                                  covars = GERD_ADJ_COVARS, cci_label = GERD_CCI_LABEL,
                                  coverage_var = NULL, stub = "gerd") {
   out <- list()
-  for (onm in intersect(names(GERD_OUTCOMES), GERD_RUN_OUTCOMES)) {
+  .onms  <- intersect(names(GERD_OUTCOMES), GERD_RUN_OUTCOMES)
+  .otick <- gerd_progress(length(.onms), paste0("outcomes: ", stub), indent = "")
+  for (onm in .onms) {
     oc <- GERD_OUTCOMES[[onm]]
     if (!oc$col %in% names(modeling_df)) next
 
@@ -1192,7 +1228,7 @@ analyze_all_outcomes <- function(modeling_df, exposures,
       cat("### If you expected more, check the case counts printed by",
           "build_gerd_outcomes(),\n### and consider GERD_PRIMARY_DEF <- \"ever\".\n")
       out[[onm]] <- list(skipped = TRUE, n_cases = .nc)
-      next
+      .otick(paste0("skipped ", onm)); next
     }
     fs <- paste0(stub, "_", onm)
     cat("\n\n##################################################################\n")
@@ -1227,6 +1263,7 @@ analyze_all_outcomes <- function(modeling_df, exposures,
                        models = res, supp_multivariable = s2,
                        figure1 = f1, figure2 = f2, diagnostics = dg,
                        n_analysed = nrow(df_o), n_cases = .nc)
+    .otick(paste0("finished ", onm))
   }
   cat("\nManuscript outputs written to: ", normalizePath(GERD_OUTPUT_DIR, mustWork = FALSE), "\n", sep = "")
   out
