@@ -74,6 +74,45 @@ rough and settle after a few items.
 > On the `n1-highmem-4` (4 vCPU / 2 cores) the default gives 3 workers. Memory
 > scales with worker count, so lower it if the build runs out of memory.
 
+> **If the console goes quiet at the start.** The build's first job is to find
+> your three data folders under `~/workspace`. It now reports that scan as it
+> goes:
+>
+> ```
+> Scanning /home/jupyter/workspace for data folders (depth <= 3)...
+>    depth 1: 6 folder(s)  [1s]
+>    depth 2: 14 folder(s)  [4s]
+>    depth 3: 9 folder(s)  [11s]
+>    scan complete: 29 folders in 11s
+> ```
+>
+> The scan is capped at `GB_SCAN_DEPTH` (3), which is deep enough for
+> `~/workspace/Data Folder/EHR_Data`. The cap matters: without it the walk
+> descends into the mounted Cloud Storage buckets and goes over the network,
+> which is what made this step look frozen.
+>
+> If it is still slow, skip discovery entirely by naming the folders yourself
+> before sourcing:
+>
+> ```r
+> GB_DIR_PATHS <- c(demog  = "~/workspace/Data Folder/Demographic_and_Fitbit_Data",
+>                   ehr    = "~/workspace/Data Folder/EHR_Data",
+>                   survey = "~/workspace/Data Folder/Survery_Data")
+> source("~/workspace/gerd_code/GERD Build Cohort From Export.R")
+> ```
+>
+> Each of the eight steps then announces its shard count and total size before
+> reading, and each batch before it starts, so no step is silent for more than
+> one batch:
+>
+> ```
+> [1/8] Sleep, from sleepLevel
+>    listing 'sleepLevel' files in Demographic_and_Fitbit_Data ...
+>    found 500 'sleepLevel' shard(s), 11804 MB
+>    sleepLevel: reading shards 1-12 of 500 (3 workers)
+>    sleepLevel: 12/500 shards  (2%, 2.8 MB/s)  ETA 28.1m  of ~29.8m
+> ```
+
 > **Do a dry run first.** Open `GERD Build Cohort From Export.R`, set
 > `GB_MAX_SHARDS <- 20`, and run step 1. It finishes in a few minutes and proves
 > the whole path works end to end. Set it back to `Inf` for the real run — the
@@ -376,7 +415,8 @@ Report whichever you choose, and quote the ratio in the methods.
 
 | Message | What to do |
 |---|---|
-| `Could not find a folder named ...` | The error lists every folder under `~/workspace`. Find the real name there and set `GB_DIR_NAMES` at the top of the build script. |
+| `Could not find a folder named ...` | The error lists every folder under `~/workspace`. Find the real name there and set `GB_DIR_NAMES` at the top of the build script. If the folder sits deeper than three levels down, raise `GB_SCAN_DEPTH` or give the full paths via `GB_DIR_PATHS`. |
+| Nothing prints after the concept dictionary | You are on a build from before the bounded folder scan. Pull the latest `GERD Build Cohort From Export.R`; it now prints the scan depth by depth, and `GB_DIR_PATHS` skips it altogether. |
 | `No files matching 'sleepLevel'` | The Fitbit export is missing that table. Run `check_fitbit_data.R`. |
 | Build runs out of memory | Lower `GB_WORKERS` (each worker holds a shard), then restart R — the build needs a clean session. `GB_MAX_SHARDS` is a dry-run tool, not a memory fix: it drops data. |
 | `these columns are entirely missing -- ...` | The named source didn't supply that covariate. Send me the line. |

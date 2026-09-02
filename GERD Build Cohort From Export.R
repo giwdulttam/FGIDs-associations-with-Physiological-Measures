@@ -43,6 +43,19 @@ if (!exists("GB_DIR_NAMES")) GB_DIR_NAMES <- c(
   survey = "Survery_Data|Survey_Data")
 if (!exists("GB_OUT")) GB_OUT  <- "~/workspace/gerd_build"
 
+# How deep to search under GB_ROOT for the named folders. They currently sit at
+# depth 2 ("~/workspace/Data Folder/EHR_Data"), so 3 is ample. Raising it makes
+# the scan slower, and on a workspace with mounted Cloud Storage buckets that
+# cost is paid over the network.
+if (!exists("GB_SCAN_DEPTH")) GB_SCAN_DEPTH <- 3L
+
+# Escape hatch for a slow or awkward filesystem: set full paths here and folder
+# discovery is skipped entirely.
+#   GB_DIR_PATHS <- c(demog = "~/workspace/Data Folder/Demographic_and_Fitbit_Data",
+#                     ehr   = "~/workspace/Data Folder/EHR_Data",
+#                     survey= "~/workspace/Data Folder/Survery_Data")
+if (!exists("GB_DIR_PATHS")) GB_DIR_PATHS <- NULL
+
 # Medication exports, one folder per class. Anyone appearing in a folder is on
 # that class -- far more reliable than matching ingredient names, so these take
 # precedence over the name patterns when present.
@@ -112,11 +125,32 @@ gb_find_dir <- function(name_rx, required = TRUE) {
   if (is.null(.gb_all_dirs)) {
     root <- path.expand(GB_ROOT)
     if (!dir.exists(root)) stop("GB_ROOT does not exist: ", root, call. = FALSE)
-    d <- suppressWarnings(list.dirs(root, recursive = TRUE, full.names = TRUE))
-    # Keep the search shallow; never descend into an export's own shard folders.
-    depth <- vapply(strsplit(sub(paste0("^", root, "/?"), "", d), "/"),
-                    length, integer(1))
-    .gb_all_dirs <<- d[depth <= 3]
+
+    # Walk level by level, stopping at GB_SCAN_DEPTH.
+    #
+    # This used to be a single list.dirs(recursive = TRUE) with the depth cap
+    # applied afterwards, which is a trap: the full tree is enumerated BEFORE
+    # anything is discarded. Under ~/workspace that tree includes the
+    # gcsfuse-mounted Cloud Storage buckets, so the walk goes over the network
+    # and can hang for many minutes with no output. Descending one level at a
+    # time and stopping early never touches those subtrees at all.
+    gb_say("Scanning ", root, " for data folders (depth <= ", GB_SCAN_DEPTH, ")...")
+    t_scan <- Sys.time()
+    lvl <- root; found <- character(0)
+    for (dep in seq_len(GB_SCAN_DEPTH)) {
+      nxt <- unlist(lapply(lvl, function(p)
+        suppressWarnings(tryCatch(list.dirs(p, recursive = FALSE, full.names = TRUE),
+                                  error = function(e) character(0)))))
+      nxt <- nxt[!grepl("gerd_build|/[.]", nxt)]
+      if (!length(nxt)) break
+      found <- c(found, nxt)
+      gb_say("   depth ", dep, ": ", length(nxt), " folder(s)  [",
+             gb_dur(as.numeric(difftime(Sys.time(), t_scan, units = "secs"))), "]")
+      lvl <- nxt
+    }
+    .gb_all_dirs <<- c(root, found)
+    gb_say("   scan complete: ", length(found), " folders in ",
+           gb_dur(as.numeric(difftime(Sys.time(), t_scan, units = "secs"))))
   }
   hit <- .gb_all_dirs[grepl(paste0("^(", name_rx, ")$"), basename(.gb_all_dirs))]
   hit <- hit[!grepl("gerd_build", hit)]
@@ -136,7 +170,19 @@ gb_find_dir <- function(name_rx, required = TRUE) {
 
 # Resolve everything up front, so a missing folder fails in a second rather than
 # after the first table has been read.
-GB_DIRS <- vapply(GB_DIR_NAMES, gb_find_dir, character(1))
+GB_DIRS <- if (!is.null(GB_DIR_PATHS)) {
+  gb_say("Using GB_DIR_PATHS -- folder discovery skipped.")
+  p <- vapply(GB_DIR_PATHS, function(x) normalizePath(path.expand(x), mustWork = TRUE),
+              character(1))
+  # Seed the folder cache with these and their siblings, so the medication-folder
+  # lookup below is satisfied from the cache and never walks GB_ROOT either.
+  # Without this the escape hatch only half-works: the three main folders are
+  # taken as given, but the first med lookup still triggers the full scan.
+  .gb_all_dirs <- unique(c(p, unlist(lapply(unique(dirname(p)), function(d)
+    suppressWarnings(tryCatch(list.dirs(d, recursive = FALSE, full.names = TRUE),
+                              error = function(e) character(0)))))))
+  p
+} else vapply(GB_DIR_NAMES, gb_find_dir, character(1))
 gb_say("Data folders:")
 for (k in names(GB_DIRS)) gb_say("   ", k, ": ", GB_DIRS[[k]])
 
@@ -155,10 +201,13 @@ gb_dir <- function(k) {
 
 # All shards of one logical table, matched by a name fragment.
 gb_shards <- function(k, frag) {
+  gb_say("   listing '", frag, "' files in ", basename(gb_dir(k)), " ...")
   f <- list.files(gb_dir(k), pattern = "\\.csv(\\.gz)?$", full.names = TRUE,
                   recursive = TRUE)
   f <- sort(f[grepl(frag, basename(f), ignore.case = TRUE)])
   if (!length(f)) stop("No files matching '", frag, "' in ", gb_dir(k), call. = FALSE)
+  gb_say("   found ", length(f), " '", frag, "' shard(s), ",
+         sprintf("%.0f MB", sum(file.info(f)$size, na.rm = TRUE) / 1024^2))
   if (is.finite(GB_MAX_SHARDS) && length(f) > GB_MAX_SHARDS) {
     warning("GB_MAX_SHARDS is set: using ", GB_MAX_SHARDS, " of ", length(f),
             " shards for '", frag, "'. Results are a DRY RUN, not final.",
@@ -209,6 +258,15 @@ gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
   acc <- list(); done <- 0L; mb_done <- 0
   for (start in seq(1L, n, by = batch)) {
     idx  <- start:min(start + batch - 1L, n)
+    # Announce BEFORE reading. The completion line below cannot appear until the
+    # whole batch is done, which on the ~500 large sleepLevel shards is minutes
+    # of dead console. This line is pure output -- batch boundaries are left
+    # exactly as they were, because moving them would move the `collapse` step
+    # with them and could reorder rows.
+    gb_say("   ", label, ": reading shard", if (length(idx) > 1L) "s" else "", " ",
+           idx[1], if (length(idx) > 1L) paste0("-", idx[length(idx)]) else "",
+           " of ", n, if (par_ok && length(idx) > 1L)
+             paste0(" (", GB_WORKERS, " workers)") else " ...")
     part <- NULL
     if (par_ok && length(idx) > 1L) {
       # mclapply forks. Forking is normally fine for plain reading and
