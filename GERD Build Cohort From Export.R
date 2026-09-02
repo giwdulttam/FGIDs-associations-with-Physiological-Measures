@@ -62,6 +62,12 @@ GB_SHORT_SLEEP_MIN  <- 240    # "short night" threshold
 GB_MAX_SHORT_PROP   <- 0.30   # drop participants with >=30% short nights
 GB_MAX_SHARDS       <- Inf    # set e.g. 20 for a fast dry run
 
+# Shard readers to run at once. Shards are independent, so this is pure
+# throughput -- it does not change any result (see gb_stream). One core is left
+# for the parent process and the OS. Set to 1 to force the old sequential path.
+if (!exists("GB_WORKERS")) GB_WORKERS <- max(
+  1L, min(as.integer(Sys.getenv("GB_WORKERS", parallel::detectCores() - 1L)), 8L))
+
 suppressWarnings(suppressMessages({
   for (p in c("readr", "dplyr", "tidyr", "lubridate"))
     if (!requireNamespace(p, quietly = TRUE))
@@ -154,18 +160,67 @@ gb_shards <- function(k, frag) {
   f
 }
 
-# Read shards one at a time, aggregate each, accumulate. Keeps peak memory at
-# roughly one shard rather than the whole table.
-gb_stream <- function(paths, cols, fn, label = "") {
-  acc <- vector("list", length(paths))
-  for (i in seq_along(paths)) {
+# Read shards, aggregate each, accumulate. Shards are independent, so they are
+# processed in parallel where the platform allows it.
+#
+# RESULTS ARE UNCHANGED BY THE PARALLELISM. mclapply returns its results in the
+# order of its input, so the list handed to bind_rows() is the same sequence the
+# old sequential loop produced, element for element. No arithmetic is reordered:
+# each shard is still aggregated on its own, and the caller still performs the
+# final aggregation over exactly the same rows in exactly the same order.
+#
+# `collapse`, if supplied, folds the accumulator after every batch to bound
+# memory. It is NOT used by default and should not be enabled casually: folding
+# partial sums changes the ORDER of floating-point addition, which can alter the
+# last bits of a result. Left NULL, the output is bit-identical to the previous
+# sequential implementation.
+gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
+
+  one <- function(p) {
     d <- tryCatch(suppressWarnings(readr::read_csv(
-           paths[i], col_select = dplyr::any_of(cols), show_col_types = FALSE,
+           p, col_select = dplyr::any_of(cols), show_col_types = FALSE,
            progress = FALSE, guess_max = 50000)), error = function(e) NULL)
-    if (!is.null(d) && nrow(d)) acc[[i]] <- fn(as.data.frame(d))
-    if (i %% 25 == 0 || i == length(paths))
-      gb_say("   ", label, ": ", i, "/", length(paths), " shards")
-    rm(d); if (i %% 25 == 0) invisible(gc(verbose = FALSE))
+    if (is.null(d) || !nrow(d)) return(NULL)
+    fn(as.data.frame(d))
+  }
+
+  n <- length(paths)
+  par_ok <- GB_WORKERS > 1L && n > 1L && .Platform$OS.type == "unix" &&
+            requireNamespace("parallel", quietly = TRUE)
+  # Batching keeps at most GB_WORKERS shards resident at once and gives the
+  # progress line something to report.
+  batch <- if (par_ok) max(1L, GB_WORKERS) * 4L else 25L
+
+  acc <- list(); done <- 0L
+  for (start in seq(1L, n, by = batch)) {
+    idx  <- start:min(start + batch - 1L, n)
+    part <- NULL
+    if (par_ok && length(idx) > 1L) {
+      # mclapply forks. Forking is normally fine for plain reading and
+      # aggregation, but it can misbehave inside some RStudio sessions, so a
+      # failure here falls back to the sequential path for the rest of the run
+      # rather than taking the build down.
+      part <- tryCatch(parallel::mclapply(paths[idx], one, mc.cores = GB_WORKERS),
+                       error = function(e) { gb_say("   [parallel read failed (",
+                         conditionMessage(e), ") -- continuing sequentially]")
+                         par_ok <<- FALSE; NULL })
+    }
+    if (is.null(part)) part <- lapply(paths[idx], one)
+
+    # A worker that died leaves a try-error in place of its result. The old loop
+    # let an error from fn() abort the run, so this does too rather than
+    # silently dropping a shard's participants.
+    bad <- vapply(part, function(z) inherits(z, "try-error"), logical(1))
+    if (any(bad))
+      stop("Failed while reading ", label, " shard(s): ",
+           paste(basename(paths[idx][bad]), collapse = ", "), "\n",
+           as.character(part[[which(bad)[1]]]), call. = FALSE)
+
+    acc  <- c(acc, part)
+    done <- done + length(idx)
+    gb_say("   ", label, ": ", done, "/", n, " shards")
+    if (!is.null(collapse) && length(acc) > 1L) acc <- list(collapse(bind_rows(acc)))
+    rm(part); invisible(gc(verbose = FALSE))
   }
   bind_rows(acc)
 }

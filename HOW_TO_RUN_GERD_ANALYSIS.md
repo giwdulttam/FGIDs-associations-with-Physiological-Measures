@@ -35,6 +35,15 @@ source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")
 Results land in `~/workspace/gerd_build/manuscript_output/` (quartiles) and
 `manuscript_output_splines/` (splines).
 
+> **Speed.** The build reads shards in parallel. It picks a worker count from
+> the machine automatically (cores minus one, capped at 8); override with
+> `GB_WORKERS <- 3` before sourcing, or `GB_WORKERS <- 1` to force the old
+> sequential path. This is throughput only — the output is byte-identical either
+> way, which is verified against a recorded baseline.
+>
+> On the `n1-highmem-4` (4 vCPU / 2 cores) the default gives 3 workers. Memory
+> scales with worker count, so lower it if the build runs out of memory.
+
 > **Do a dry run first.** Open `GERD Build Cohort From Export.R`, set
 > `GB_MAX_SHARDS <- 20`, and run step 1. It finishes in a few minutes and proves
 > the whole path works end to end. Set it back to `Inf` for the real run — the
@@ -310,7 +319,7 @@ oesophagitis.
 |---|---|
 | `Could not find a folder named ...` | The error lists every folder under `~/workspace`. Find the real name there and set `GB_DIR_NAMES` at the top of the build script. |
 | `No files matching 'sleepLevel'` | The Fitbit export is missing that table. Run `check_fitbit_data.R`. |
-| Build runs out of memory | Lower `GB_MAX_SHARDS`, run in pieces, or restart R first — the build needs a clean session. |
+| Build runs out of memory | Lower `GB_WORKERS` (each worker holds a shard), then restart R — the build needs a clean session. `GB_MAX_SHARDS` is a dry-run tool, not a memory fix: it drops data. |
 | `these columns are entirely missing -- ...` | The named source didn't supply that covariate. Send me the line. |
 | `Could not find your .rds datasets` | Set `GERD_DATA_DIR <- "~/workspace/gerd_build"` **before** sourcing the runner. |
 | One analysis says `FAILED` | The others still ran. Send me the error above the summary. |
