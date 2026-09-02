@@ -105,534 +105,21 @@ a self-contained methodological reference for reproducing and critiquing the stu
 {\small\noindent\textbf{Deliverables.}
 \code{GERD Outcome Data Upload R9.R},\;
 \code{GERD Analysis Helpers R9.R},\;
+\code{GERD Concepts R9.R},\;
+\code{GERD Build Cohort From Export.R},\;
+\code{GERD Analysis Helpers R9.R},\;
+\code{GERD Data Prep R9.R},\;
+\code{RUN\_GERD\_ANALYSIS.R},\;
 \code{Sleep and GERD Analysis File R9.R},\;
 \code{Activity and GERD Analysis File R9.R},\;
 \code{Activity Sleep and GERD Analysis File R9.R},\;
+\code{GERD Spline Analysis R9.R},\;
+\code{GERD Quartile vs Spline Comparison R9.R},\;
+\code{RUN\_GERD\_SPLINE\_ANALYSIS.R},\;
 \code{GERD Pharmacologics Data Upload.R}.}
 
 \tableofcontents
 \newpage
-
-%======================================================================
-\section*{Protocol Amendment (supersedes parts of this report)}
-\addcontentsline{toc}{section}{Protocol Amendment (supersedes parts of this report)}
-%======================================================================
-\noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{%
-\textbf{Read this before the rest of the report.} Several decisions described in
-the body of this document have since been changed. Where the body and this
-section disagree, \textbf{this section is current}. The analysis code in the
-repository implements the amended design; the body has been updated only at the
-abstract and executive-summary level.
-
-\medskip
-\textbf{One rule covers most of the difference:} wherever the body refers to
-\code{has\_gerd\_no\_eso}, or to concept \textbf{4144111}, as a modelled
-outcome, that is superseded. The study models \code{has\_gerd\_any} (seed
-\textbf{318800}) and \code{has\_esophagitis} (seed \textbf{30753}); the
-non-oesophagitic group is derived and reported descriptively but is never
-modelled. Passages in the body discussing what a GERD-without-oesophagitis
-phenotype would show should be read as motivating the \code{has\_gerd\_any}
-versus \code{has\_esophagitis} contrast instead.}}
-
-\subsection*{A1. The outcome definition changed}
-The body of this report defines \code{has_gerd_no_eso} as a standalone phenotype
-seeded on concept \textbf{4144111} (``GERD without oesophagitis''), pulled in
-parallel with oesophagitis (\textbf{30753}). That design has been superseded
-twice, and the current specification is stated here in full.
-
-\paragraph{Why 4144111 was abandoned.} Inspection of the cohort in the
-\emph{All of Us} Cohort Builder showed substantial overlap between participants
-carrying 4144111 and participants carrying oesophagitis codes. The ``without
-oesophagitis'' label on the concept does not, in practice, identify a
-non-oesophagitic group, because participants accumulate both kinds of code over
-time. Seeding on 4144111 therefore does not deliver the contrast the study
-intends.
-
-\paragraph{Why the derived exclusion group was also dropped.} The intermediate
-design pulled broad GERD and derived a ``GERD without oesophagitis'' group by
-removing oesophagitis carriers. That group has now been removed from the
-modelled set as well. It was never the study's question: the analysis asks how
-sleep and physical activity relate to reflux disease and to oesophagitis, and
-those are answered by modelling each condition directly. Carving a third,
-mutually-conditioned group out of the first added a phenotype whose
-interpretation depends on the completeness of oesophagitis coding, consumed a
-third of the multiplicity budget, and produced an outcome no reader had asked
-about.
-
-\paragraph{Current specification --- two outcomes.}
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l l l@{}}
-\toprule
-\textbf{Outcome} & \textbf{Source} & \textbf{Rule} \\
-\midrule
-\code{has_gerd_any}    & seed \textbf{318800} (SNOMED 235595009) + descendants & $\geq 2$ records \\
-\code{has_esophagitis} & seed \textbf{30753} (SNOMED 16761005) + descendants   & $\geq 2$ records \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent Erosive oesophagitis (\textbf{4231067}) is folded into the
-oesophagitis concept set: it is the same phenotype coded with more specificity,
-and excluding it would place those participants in the ``no oesophagitis''
-group. The two outcomes are not mutually exclusive --- a participant may carry
-codes for both, and that overlap is reported descriptively rather than being
-made into a third outcome.
-
-\paragraph{The six analysis configurations.} Two outcomes crossed with three
-exposure sets:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l c c@{}}
-\toprule
-\textbf{Exposure set} & \textbf{\code{has_gerd_any}} & \textbf{\code{has_esophagitis}} \\
-\midrule
-(A) Sleep quartiles                  & Config 1 & Config 2 \\
-(B) Activity quartiles               & Config 3 & Config 4 \\
-(C) Combined (+ mutually adjusted)   & Config 5 & Config 6 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent Each configuration produces Table 1, Table 2, two supplementary
-tables, two figures and a diagnostics summary. The spline analysis of
-section A5 and the head-to-head of section A6 run over the same six.
-
-\paragraph{What is retained descriptively.} \code{build\_gerd\_outcomes()} still
-derives the non-oesophagitic flag and the count of participants carrying any
-oesophagitis record, and prints both under a \textsc{descriptive (not modelled)}
-heading. The GERD/oesophagitis overlap is a number the manuscript reports, and
-it should come from the same code path that defines the outcomes rather than a
-separate tabulation. Nothing about it enters a model, a table, or the
-multiplicity correction.
-
-\paragraph{Multiplicity.} Bonferroni correction is applied within outcome,
-across exposures, exactly as before. Reducing three modelled outcomes to two
-reduces the number of models by a third and correspondingly relaxes the
-correction, which is a real gain in power rather than a bookkeeping change.
-
-\subsection*{A2. The outcome pull now queries the workspace's own dataset}
-The body describes \code{GERD Outcome Data Upload R9.R}, which queries
-\code{fc-aou-cdr-prod-ct.C2024Q3R9} and exports through Cloud Storage. In the
-migrated workspace that project lies \emph{outside} the VPC Service Controls
-perimeter, and every request fails with
-\code{policyViolation}. The replacement,
-\code{GERD_PULL_OUTCOMES_BIGQUERY.R}, resolves the BigQuery dataset attached to
-the workspace as a Resource (e.g.\ \code{C2025Q4R6}, which is inside the
-perimeter), expands descendants through \code{concept_ancestor} with a
-\code{cb_criteria} fallback, restricts to the Fitbit cohort's \code{person_id}s,
-and downloads directly --- removing the Cloud Storage hop entirely. The original
-script is retained for workspaces with classic All of Us BigQuery access.
-
-\subsection*{A3. The data source changed: three Workbench datasets, merged on \texttt{person\_id}}
-The body of this report describes an analysis assembled from the project's
-pre-existing \code{.rds} objects in \code{rds\_backup} --- the same objects
-behind the published IBS paper. That is no longer the design. The study team
-exported three datasets to Workspace Resources, and the GERD analysis is built
-from those alone:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l p{9.5cm}@{}}
-\toprule
-\textbf{Dataset} & \textbf{Supplies} \\
-\midrule
-\code{Demographic\_and\_Fitbit\_Data} & Demographics; Fitbit sleep, steps and heart rate (the exposures) \\
-\code{EHR\_Data} & Conditions, procedures and drug exposures (the outcomes, comorbidities and medications) \\
-\code{Survery\_Data} & Survey covariates and BMI \\
-\code{Antidepressants}, \code{Antipsychotics}, & \\
-\code{Beta\_Blockers}, \code{Calcium\_Blockers}, & Medication covariates, one export per class \\
-\code{Narcotics} & \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent The five medication exports are \emph{authoritative} for their class:
-membership of the \code{Narcotics} export establishes opioid exposure without
-depending on an ingredient name matching a pattern. Tricyclics are separated out
-of the antidepressant export by name, because the sleep-medication covariate
-requires that class specifically. Folders are located by name anywhere beneath
-\code{\textasciitilde/workspace}, since they have already been reorganised once
-during the study.
-
-\noindent All three carry \code{person\_id}, and the build merges on it. The
-crucial point is that \textbf{the GERD cohort is not the IBS cohort}: nothing is
-read from \code{rds\_backup}, so the two studies share no denominator and the
-GERD numbers cannot inherit an IBS-era eligibility decision.
-
-\paragraph{Two properties of the export that the build has to handle.}
-First, the Workbench applies a \code{T\_DISP\_} convention: a column \code{X}
-holds a coded value and \code{T\_DISP\_X} the readable text. Reading \code{X}
-where a name is expected silently yields concept ids. Second, the pre-aggregated
-Fitbit tables (\code{sleepDailySummary}, \code{activitySummary}) are entirely
-NULL in this export, while the underlying \code{sleepLevel} table is fully
-populated. The nightly sleep metrics are therefore reconstructed from
-\code{sleepLevel}:
-\[
-\text{minute\_asleep} = \text{asleep} + \text{deep} + \text{light} + \text{rem},
-\qquad
-\text{minute\_awake} = \text{awake} + \text{wake},
-\]
-with \code{minute\_in\_bed} the sum of every level. The first form covers
-stages-capable devices, the second the classic logs. Wear time, which the export
-has no column for, is recovered as the sum of \code{minute\_in\_zone} across
-heart-rate zones, so the $\geq 10$-hour valid-day rule still applies. Heart-rate
-zone minutes stand in for the empty active-minute columns; they are
-\emph{heart-rate} based rather than accelerometer based and are labelled as such.
-
-\subsection*{A4. Confounding control, revised on GERD expert review}
-A GERD expert reviewed the protocol and required three changes. All are
-implemented in \code{GERD Concepts R9.R} and \code{GERD Analysis Helpers R9.R}.
-
-\paragraph{(i) Sleep medication is now an adjustment variable.}
-Tricyclic antidepressants (amitriptyline, nortriptyline, doxepin and related)
-and hypnotics --- both benzodiazepine (triazolam/Halcion, temazepam) and
-non-benzodiazepine (zolpidem, eszopiclone) --- alter sleep duration and
-architecture \emph{and} several reduce lower oesophageal sphincter tone. Omitting
-them attributes a pharmacological effect to sleep itself. The covariate
-\code{on\_sleep\_med} is the union of the three classes; the components are
-retained so the composite is auditable and any one class can be modelled alone.
-
-\paragraph{(ii) Obstructive sleep apnoea is now an adjustment variable.}
-This is the dominant confounder of any sleep--reflux association. Apnoea causes
-both fragmented sleep and reflux, and it travels with obesity. An unadjusted
-estimate of "poor sleep $\rightarrow$ GERD" partly measures undiagnosed apnoea
-instead. \code{has\_sleep\_apnea} (concept 313459) enters every adjusted model.
-
-\paragraph{(ii-b) Opioid analgesics are adjusted for.}
-Added when the study team exported a dedicated \code{Narcotics} dataset. Opioids
-delay gastric emptying and reduce lower oesophageal sphincter tone, and they
-fragment sleep --- they confound both sides of the association, so leaving them
-out would load an opioid effect onto the sleep coefficient.
-
-\paragraph{(iii) Foregut surgery and upper gastrointestinal cancer are exclusions.}
-A myotomy deliberately cuts the lower oesophageal sphincter, so reflux afterwards
-is produced \emph{by the operation}. Fundoplication, gastrectomy, bariatric
-surgery and oesophagectomy likewise change the anatomy that generates reflux.
-Oesophageal and gastric cancer alter eating, weight and sleep, produce
-reflux-like symptoms, and lead to major surgery. Neither group is comparable to
-the population this study is about, so both are removed rather than adjusted for.
-Achalasia is retained as an exclusion: it mimics reflux and is the indication for
-the myotomies above.
-
-Oesophageal dilation and bougienage are deliberately \emph{not} excluded. They
-treat a stricture, which is a consequence of reflux rather than a cause;
-excluding them would remove severe-reflux participants and bias the association
-towards the null. They are available as covariates.
-
-Concept ids exist for achalasia (318186), oesophageal malignancy (4181343),
-oesophagectomy (4187533) and gastrectomy (4203442). Heller myotomy, POEM and
-cricopharyngeal myotomy have no id in this workspace's concept set but appear by
-name in the procedure export, so exclusion matches on concept id where one
-exists and on name where it does not.
-
-\paragraph{The adjustment set, as revised.}
-\[
-\begin{aligned}
-\text{logit}\,\Pr(\text{outcome}) = \beta_0 &+ \beta_1 \text{Exposure quartile}
- + \gamma_1 \text{age} + \gamma_2 \text{sex} + \gamma_3 \text{race} + \gamma_4 \text{ethnicity} \\
- &+ \gamma_5 \text{education} + \gamma_6 \text{income}
-   + \gamma_7 \text{smoking} + \gamma_8 \text{alcohol} + \gamma_9 \text{BMI} \\
- &+ \gamma_{10}\,\textbf{sleep apnoea} + \gamma_{11}\,\textbf{sleep medication} \\
- &+ \gamma_{13} \text{depression} + \gamma_{14} \text{anxiety}
-   + \gamma_{15} \text{diabetes} + \gamma_{16} \text{hypertension}
-   + \gamma_{17} \text{peptic ulcer disease}
-\end{aligned}
-\]
-
-\noindent Two departures from the body of this report. \code{has\_ibs} is
-dropped: IBS is not in this workspace's concept set, so it was constant and
-contributed nothing. The comorbidity index is dropped from the default set: it
-is built from congestive heart failure, COPD, type 2 diabetes and peptic ulcer
-disease, so including it alongside \code{has\_diabetes} and \code{has\_pud}
-double-counts them. Diabetes and hypertension are adjusted for explicitly
-instead, which is both what the expert asked for and more interpretable.
-Setting \code{GERD\_USE\_COMORBIDITY\_INDEX <- TRUE} restores the index in place
-of the explicit flags. Note that the index available here is a \emph{partial}
-count over the four Charlson conditions present in this concept set --- it is
-not a validated Charlson Comorbidity Index and is labelled accordingly in every
-table.
-
-\paragraph{Participant flow.} The build writes \code{participant\_flow.csv}: the
-count at every step from "has Fitbit data" through the exposure minimum, EHR
-sharing, the age threshold and the clinical exclusions, for both the sleep and
-activity cohorts. The manuscript's flow figure is transcribed from that file
-rather than reconstructed after the fact.
-
-\subsection*{A5. Secondary analysis: restricted cubic splines on the continuous exposures}
-
-The primary analysis divides each exposure into quartiles. That is robust,
-makes no functional-form assumption, and matches the published template --- but
-it discards within-quartile variation, imposes step changes at cut-points that
-carry no biological meaning, and cannot recover the \emph{shape} of a
-dose--response relationship. A U-shaped association, in which both very short
-and very long sleep carry elevated odds, is precisely the pattern a quartile
-model is least able to express: Q1 and Q4 both appear elevated relative to a
-mid-range reference, but the model cannot say where the minimum lies or whether
-the rise at either end is real.
-
-This section adds a spline analysis alongside the quartile models. It replaces
-nothing: both analyses are fitted on identical participants with an identical
-adjustment set, so any difference between them is attributable to the exposure
-parameterisation and to nothing else.
-
-\paragraph{Methodological precedent.} The procedure follows Master et al.,
-\emph{Nature Medicine} 2022;28:2301--2308,
-``Association of step counts over time with the risk of chronic disease in the
-All of Us Research Program'' (doi:10.1038/s41591-022-02012-w). That study is the
-closest available precedent: the same cohort resource, Fitbit-derived exposures,
-EHR-derived outcomes, and Frank Harrell as senior methodologist. It also reports
-acid reflux among its outcomes, so the exposure--outcome pair examined here is
-one it examined directly.
-
-\paragraph{Procedure.} For each continuous exposure:
-
-\begin{enumerate}
-\item Fit restricted cubic splines with 3, 4 and 5 knots in separate logistic
-models, each adjusted for the full covariate set.
-\item Select the knot count with the lowest AIC. All three candidates are fitted
-on the same rows, so the comparison is valid.
-\item Test the exposure with Harrell's Wald ``chunk test'', reported as two
-separate quantities:
-\begin{itemize}
-\item \textbf{$p$-overall} --- jointly, are \emph{all} spline terms zero? This
-asks whether the exposure is associated with the outcome at all.
-\item \textbf{$p$-non-linearity} --- jointly, are the \emph{non-linear} terms
-zero? This asks whether that association departs from a straight line on the
-log-odds scale.
-\end{itemize}
-\item Report the effect as the odds ratio comparing the 75th to the 25th
-percentile of the exposure, matching the contrast Master et al.\ report.
-\item Plot the fitted curve with a 95\% confidence band across the observed
-range, referenced to the median.
-\end{enumerate}
-
-Knots sit at Harrell's recommended quantiles (\emph{Regression Modeling
-Strategies}, Table 2.3), which are the \code{rms::rcs()} defaults:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l l@{}}
-\toprule
-\textbf{Knots} & \textbf{Quantiles} \\
-\midrule
-3 & 10, 50, 90 \\
-4 & 5, 35, 65, 95 \\
-5 & 5, 27.5, 50, 72.5, 95 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{The spline basis.} With knots $t_1 < \cdots < t_k$, the basis is the
-truncated power form of \emph{Regression Modeling Strategies} eq.~2.25: the
-first column is $x$ itself and, for $j = 1, \ldots, k-2$,
-\[
-X_{j+1} = \frac{(x-t_j)_+^3
- - (x-t_{k-1})_+^3\,\frac{t_k-t_j}{t_k-t_{k-1}}
- + (x-t_k)_+^3\,\frac{t_{k-1}-t_j}{t_k-t_{k-1}}}{(t_k-t_1)^2}.
-\]
-The linear term occupying column one is what makes the two chunk tests a clean
-partition: dropping columns $2,\ldots,k-1$ leaves a model linear in $x$, and
-dropping all of them removes $x$ entirely. The basis is implemented directly
-rather than through \code{rms}, so the pipeline carries no additional dependency,
-and it is verified on load against \code{splines::ns()} --- the two bases span
-the same function space, so a model fitted with either must produce identical
-fitted values. The run aborts if that check fails.
-
-\paragraph{Odds ratio curves.} For a model
-$\operatorname{logit}\Pr(Y=1) = \beta_0 + \mathbf{B}(x)^\top\boldsymbol\beta + \mathbf{Z}^\top\boldsymbol\gamma$,
-the odds ratio at $x$ relative to a reference $x_0$ is
-\[
-\mathrm{OR}(x \,\vert\, x_0) = \exp\!\big[(\mathbf{B}(x)-\mathbf{B}(x_0))^\top \boldsymbol\beta\big],
-\qquad
-\widehat{\mathrm{Var}} = \mathbf{d}^\top \mathbf{V}_{\boldsymbol\beta}\, \mathbf{d},
-\quad \mathbf{d} = \mathbf{B}(x)-\mathbf{B}(x_0).
-\]
-Every covariate is held fixed and cancels exactly, so only the spline block of
-the coefficient vector and its covariance sub-matrix are required. The reference
-and both contrast percentiles are placed on the evaluation grid, so the plotted
-curve passes exactly through $\mathrm{OR}=1$ at the reference rather than merely
-near it.
-
-\paragraph{Two deliberate departures from Master et al.} Both follow from this
-study's design and are stated here so that neither is mistaken for an oversight.
-
-\begin{itemize}
-\item \textbf{Logistic regression, not Cox.} This study is cross-sectional.
-There is no follow-up time and no incident-event structure, so a proportional
-hazards model is not defined; odds ratios replace hazard ratios. Master et al.\
-likewise used logistic regression for their own cross-sectional screening step
-and reserved Cox models for the longitudinal analysis their repeated-measures
-design supported.
-\item \textbf{Complete-case, not multiple imputation.} The paper pooled results
-over five \code{aregImpute} datasets. Complete-case analysis is used here so
-that the spline and quartile models are fitted on exactly the same rows. Adding
-imputation to one arm only would confound a difference in \emph{shape} with a
-difference in \emph{missing-data handling}, which is the one comparison this
-section exists to make. Per-model missingness is reported so the cost is visible,
-and multiple imputation across both analyses remains available as a sensitivity
-analysis.
-\end{itemize}
-
-\paragraph{Stability safeguards.} A spline model can converge and still be
-numerically meaningless. With few cases, cubic terms can yield an odds ratio of
-$10^5$ with a confidence interval spanning twenty orders of magnitude, and --- as
-observed during validation --- such a model can carry an apparently significant
-$p$-value. Three guards prevent that reaching a table:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l p{8.4cm}@{}}
-\toprule
-\textbf{Guard} & \textbf{Action} \\
-\midrule
-CI ratio $>1000$ & Estimate suppressed, row marked \textsc{unstable} \\
-$\lvert \log \mathrm{OR}\rvert > \log 50$ & Estimate suppressed, row marked \textsc{unstable} \\
-Events per parameter $<10$ & Estimate retained, flagged as provisional \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent Suppressed rows remain in the CSV with the reason recorded in
-\code{unstable\_why}, so nothing is silently discarded, but they are excluded
-from the shape classification and displayed as \code{--}. The events-per-variable
-threshold follows Peduzzi et al.\ (1996); it matters more here than in the
-quartile analysis because a 5-knot spline spends four degrees of freedom on the
-exposure alone.
-
-\paragraph{Validation.} The implementation is verified against data with known
-structure before use: a simulated U-shape must be detected as non-linear with
-its minimum recovered in the right place; a simulated linear trend must be
-detected as an association but \emph{not} as non-linear; a null exposure must
-trigger neither test; and the 75th-versus-25th-percentile odds ratio must agree
-with an independently fitted linear-logit model. All four checks, together with
-the basis identity against \code{splines::ns()}, pass.
-
-\paragraph{Outputs.} Written to \code{manuscript\_output\_splines/}, separate
-from the quartile outputs:
-
-\begin{itemize}
-\item \code{<cohort>\_spline\_summary.csv} --- one row per outcome $\times$
-exposure: selected knot count, knot locations, AIC, OR (75th vs 25th) with CI,
-both $\chi^2$ statistics with degrees of freedom, both raw and multiplicity-
-adjusted $p$-values, events per parameter, and a \code{shape} column reading
-\emph{linear}, \emph{non-linear}, \emph{no association} or \textsc{unstable}.
-\item \code{<cohort>\_<outcome>\_<exposure>\_spline.png} --- the fitted curve
-with its confidence band, knot locations, reference line, and the exposure
-distribution beneath, so that a wide interval in a sparse region is not misread
-as a finding.
-\item \code{<cohort>\_<outcome>\_<exposure>\_curve.csv} --- the plotted
-coordinates, so figures can be restyled for submission without refitting.
-\end{itemize}
-
-Multiplicity is handled exactly as in the primary analysis: Bonferroni within
-outcome, across exposures, governed by the same \code{GERD\_P\_ADJUST} setting.
-
-\paragraph{Interpretation.} The two analyses answer different questions and
-should be read together. The quartile models give the manuscript's headline
-effect estimates in the familiar form; the spline models establish whether the
-quartile pattern reflects a genuine monotone gradient, a threshold, or a
-U-shape, and where any inflection lies. Where $p$-non-linearity is not
-significant, the linear-in-log-odds summary is adequate and the quartile
-estimates can be reported without qualification. Where it \emph{is} significant,
-the quartile table understates the relationship and the spline figure should
-carry the interpretation.
-
-\subsection*{A6. Head-to-head: did the spline analysis change anything?}
-
-Two analyses now estimate the same associations, which raises an obvious
-question that should not require reading two sets of tables side by side to
-answer. \code{GERD Quartile vs Spline Comparison R9.R} answers it in one file
-per cohort, written at the end of the spline run.
-
-\paragraph{Making the comparison fair.} Three differences would make a naive
-side-by-side misleading. All three are eliminated by \emph{refitting} every
-model inside the comparison rather than reading the two analyses' output files.
-
-\begin{enumerate}
-\item \textbf{The contrasts differ.} The quartile model reports Q4 versus Q1;
-the spline reports the 75th versus the 25th percentile. Q4 versus Q1 contrasts
-the middles of the top and bottom quarters, which lie further apart than
-$P_{75}$ and $P_{25}$, so comparing the two directly would show an effect-size
-difference that is an artefact of the contrast rather than of the method. The
-comparison therefore evaluates the spline at the \emph{median of Q1} and the
-\emph{median of Q4}, so both columns answer the same question. The
-$P_{75}$-versus-$P_{25}$ contrast is retained in its own columns.
-\item \textbf{The row sets differ.} The spline analysis trims to the
-1st--99th percentile; the quartile analysis does not. AIC and interval widths
-are not comparable across different rows, so the trim is applied to both.
-\item \textbf{The covariate sets can differ.} The sparsity guard may drop
-different covariates in the two fits. Here it runs once and the surviving set is
-used for all three models.
-\end{enumerate}
-
-\noindent With those controlled, any remaining difference is attributable to the
-exposure parameterisation, which is the only thing under test.
-
-\paragraph{What each row reports.} Odds ratios from both methods on the matched
-contrast; $\Delta$AIC (spline minus quartile, negative favouring the spline);
-the ratio of confidence-interval widths on the log-odds scale, below one meaning
-the spline is more precise; the non-linearity $p$-value; and a plain-language
-\code{verdict}:
-
-\begin{table}[h]
-\centering
-\begin{tabular}{@{}l p{8.2cm}@{}}
-\toprule
-\textbf{Verdict} & \textbf{Meaning} \\
-\midrule
-\textsc{spline adds}: non-linear & The relationship is not log-linear. The quartile table understates it; the spline figure should carry the interpretation. \\
-\textsc{spline adds}: association only the spline detects & The quartile model missed it. \\
-disagree & The two methods differ on significance. Investigate before reporting either. \\
-agree; spline more precise & Same conclusion, narrower interval. \\
-agree & Same conclusion. Report quartiles as primary; cite the spline as confirming log-linearity. \\
-unstable & Too few cases. Suppressed on whichever side is affected; not reportable. \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Why this is worth having even when the answer is ``no''.} A verdict of
-\emph{agree} across the board is a substantive result, not a null one: it
-establishes that the quartile estimates are not an artefact of where the
-cut-points fell, and it forecloses the reviewer question ``did you check the
-functional form?''. One methods sentence then covers it.
-
-\paragraph{The case this exists to catch.} During validation, a simulated
-symmetric U-shape produced a quartile odds ratio of $1.00$ (0.91--1.11) --- an
-exactly null result --- because Q1 and Q4 sit at comparable risk when the
-minimum lies in the middle, so the contrast between them cancels. The spline
-recovered the same relationship with $p_{\text{non-linearity}} < 10^{-4}$ and
-$\Delta\mathrm{AIC} = -2049$. A quartile analysis alone would have reported no
-association where a strong one exists. This is not a hypothetical failure mode:
-it is the specific reason a sleep exposure warrants the check, since both short
-and long sleep are plausibly associated with reflux.
-
-\paragraph{Stability applies to both sides.} The suppression rules of section A5
-are applied to the quartile estimate as well as the spline. A quartile model is
-no less capable of degeneracy --- validation produced one with an odds ratio of
-$4.9 \times 10^9$ --- and a table that suppressed only the spline would imply
-the other side was trustworthy when it was not.
-
-\subsection*{A7. Deliverables, as amended}
-{\small\noindent
-\code{GERD Concepts R9.R},\;
-\code{GERD Spline Analysis R9.R},\;
-\code{GERD Quartile vs Spline Comparison R9.R},\;
-\code{RUN\_GERD\_SPLINE\_ANALYSIS.R},\;
-\code{GERD Build Cohort From Export.R},\;
-\code{export_new_datasets_schema.R},\;
-\code{check_fitbit_data.R},\;
-\code{GERD_PULL_OUTCOMES_BIGQUERY.R},\;
-\code{GERD Analysis Helpers R9.R},\;
-\code{GERD Data Prep R9.R},\;
-\code{RUN_GERD_ANALYSIS.R},\;
-\code{Sleep and GERD Analysis File R9.R},\;
-\code{Activity and GERD Analysis File R9.R},\;
-\code{Activity Sleep and GERD Analysis File R9.R},\;
-\code{GERD_FIND_OUTCOME_DATA.R},\;
-\code{GERD Pharmacologics Data Upload.R}.}
 
 \newpage
 \section{Executive Summary}
@@ -672,7 +159,7 @@ The deliverables are all new R files; no existing notebook is edited:
 
 \begin{itemize}
   \item ``GERD Outcome Data Upload R9.R'' -- two separate descendant-expanded outcome pulls, one per
-  phenotype (seed 4144111 and seed 30753), producing \code{R9_gerd_no_eso_outcome.rds} and
+  phenotype (seed 318800 and seed 30753), producing \code{R9_gerd_all_outcome.rds} and
   \code{R9_esophagitis_outcome.rds}, plus an overlap report.
   \item ``GERD Analysis Helpers R9.R'' -- the shared modeling engine described above.
   \item ``Sleep and GERD Analysis File R9.R'' -- sleep exposures against both outcomes.
@@ -690,7 +177,7 @@ Primary analytic outputs are \code{R9_final_analysis_sleep_gerd_df.rds}, \code{R
 Gastroesophageal reflux disease (GERD) is among the most prevalent chronic gastrointestinal conditions in adults, defined clinically as troublesome symptoms or mucosal complications arising when gastric contents reflux into the oesophagus. It sits at the intersection of two overlapping disease constructs. On one side are the acid-related structural disorders, in which excess oesophageal acid exposure produces objective epithelial injury -- erosions, ulceration, stricture, and Barrett metaplasia. On the other side are the functional and symptom-defined presentations, in which patients experience heartburn, regurgitation, and non-cardiac chest pain in the absence of, or out of proportion to, visible mucosal damage. This latter category shares mechanistic and epidemiologic features with the functional gastrointestinal disorders (now termed disorders of gut--brain interaction), including a prominent role for visceral hypersensitivity, altered central pain processing, and psychosocial and behavioral modulation of symptom burden.
 
 This dual character motivates the study's two parallel phenotypes, which are deliberately drawn on
-either side of the erosive divide. GERD without oesophagitis (\code{has_gerd_no_eso}) is diagnosed
+either side of the erosive divide. Broad GERD (\code{has_gerd_any}) is diagnosed
 predominantly on symptoms in the absence of documented mucosal damage, and therefore behaves largely as
 a disorder of gut--brain interaction. Oesophagitis (\code{has_esophagitis}) is defined by objective
 tissue injury. Studying both in parallel lets us ask whether physiological exposures act on subjective symptom reporting, on measurable tissue damage, or on both, and whether the strength of association differs between the sensory/perceptual and the structural manifestations of reflux.
@@ -709,7 +196,7 @@ Several partially overlapping mechanisms make both insufficient or fragmented sl
 
 \paragraph{Delayed acid clearance.} Oesophageal acid clearance depends on primary peristalsis triggered by swallowing and on neutralization by swallowed, bicarbonate-rich saliva. Both swallowing frequency and salivary flow fall markedly during sleep, and this suppression is exaggerated by sleep deprivation and fragmentation. The result is slower restoration of normal intraluminal pH after a reflux event, again lengthening mucosal acid exposure. Reduced daytime physical activity may compound impaired motility indirectly through its downstream metabolic and autonomic effects.
 
-\paragraph{Visceral hypersensitivity.} Experimental sleep deprivation lowers the oesophageal pain threshold, producing hyperalgesia to acid and mechanical distension. This heightened afferent sensitivity increases symptom reporting for a given quantum of acid exposure and is a core feature of the gut--brain-interaction component of reflux. This pathway predicts that poor sleep will associate with symptom-defined \code{has_gerd_no_eso} even where objective injury is modest, and it is a mechanism through which sleep can influence perceived disease independently of tissue damage.
+\paragraph{Visceral hypersensitivity.} Experimental sleep deprivation lowers the oesophageal pain threshold, producing hyperalgesia to acid and mechanical distension. This heightened afferent sensitivity increases symptom reporting for a given quantum of acid exposure and is a core feature of the gut--brain-interaction component of reflux. This pathway predicts that poor sleep will associate with symptom-defined \code{has_gerd_any} even where objective injury is modest, and it is a mechanism through which sleep can influence perceived disease independently of tissue damage.
 
 \paragraph{Autonomic and vagal tone.} Both habitual physical activity and healthy sleep shape autonomic balance, and vagal tone modulates lower oesophageal sphincter (LES) pressure and the frequency of transient LES relaxations (TLESRs), the dominant mechanism of reflux events. Disrupted sleep and physical deconditioning shift autonomic balance in directions associated with impaired sphincter function and altered gastric accommodation and emptying. The corrected maximum daily heart rate is included in part as a proxy that carries autonomic and cardiorespiratory-fitness information alongside the volume and intensity activity metrics.
 
@@ -736,14 +223,14 @@ The design mirrors the project's antecedent IBS sleep study, constipation activi
 
 \subsection{Research Question and Directional Hypothesis}
 
-The central research question is whether objectively measured sleep and physical activity are associated with the odds of broad GERD and of erosive oesophagitis in Fitbit-sharing All of Us participants, and whether any such associations persist after adjustment for demographic, socioeconomic, anthropometric, comorbidity, and medication confounders. The directional hypothesis is that greater sleep quantity and quality (for example, higher minutes asleep, higher sleep efficiency, and more consolidated sleep) and greater physical activity (for example, higher daily steps and more active minutes, with correspondingly lower sedentary time) associate with \emph{lower} odds of both GERD and oesophagitis -- that is, upper quartiles (Q2--Q4) will carry adjusted odds ratios below unity relative to Q1. We anticipate that these associations will attenuate after covariate adjustment -- particularly for activity exposures, where BMI lies partly on the causal pathway -- but that they will persist rather than disappear. Given the mechanistic profile described above, we expect the acid-exposure-dependent pathways to register on the erosive \code{has_esophagitis} phenotype, while sleep-related hyperalgesia may leave a signal on symptom-defined \code{has_gerd_no_eso} even where mucosal injury is limited. Because the design is cross-sectional, all primary estimates are interpreted as associations; the post-Fitbit temporal outcome definition provides the strongest available guard against the reverse-causation pathway in which nocturnal reflux itself fragments sleep.\section{Study Design Overview}
+The central research question is whether objectively measured sleep and physical activity are associated with the odds of broad GERD and of erosive oesophagitis in Fitbit-sharing All of Us participants, and whether any such associations persist after adjustment for demographic, socioeconomic, anthropometric, comorbidity, and medication confounders. The directional hypothesis is that greater sleep quantity and quality (for example, higher minutes asleep, higher sleep efficiency, and more consolidated sleep) and greater physical activity (for example, higher daily steps and more active minutes, with correspondingly lower sedentary time) associate with \emph{lower} odds of both GERD and oesophagitis -- that is, upper quartiles (Q2--Q4) will carry adjusted odds ratios below unity relative to Q1. We anticipate that these associations will attenuate after covariate adjustment -- particularly for activity exposures, where BMI lies partly on the causal pathway -- but that they will persist rather than disappear. Given the mechanistic profile described above, we expect the acid-exposure-dependent pathways to register on the erosive \code{has_esophagitis} phenotype, while sleep-related hyperalgesia may leave a signal on symptom-defined \code{has_gerd_any} even where mucosal injury is limited. Because the design is cross-sectional, all primary estimates are interpreted as associations; the post-Fitbit temporal outcome definition provides the strongest available guard against the reverse-causation pathway in which nocturnal reflux itself fragments sleep.\section{Study Design Overview}
 
 This study is a retrospective, cross-sectional analysis conducted in the All of Us Research
 Program using the Controlled Tier Curated Data Repository (CDR) v9, release C2024Q3R9. It relates
 wearable-recorded physiological exposures, derived from Fitbit devices, to acid-related upper
 gastrointestinal disease captured in the electronic health record (EHR). The analysis estimates
 associations between habitual sleep and physical-activity patterns and the odds of two parallel
-EHR-defined outcomes: gastroesophageal reflux disease without oesophagitis (\code{has_gerd_no_eso}) and the
+EHR-defined outcomes: gastroesophageal reflux disease (\code{has_gerd_any}) and the
 erosive subset (\code{has_esophagitis}). Because the design is cross-sectional, the primary
 estimands are associations rather than causal effects; a post-Fitbit temporal outcome definition is
 carried as the principal guard against reverse causation, since nocturnal reflux is itself known to
@@ -785,7 +272,7 @@ Population & Fitbit-sharers; age $\geq 18$ at first Fitbit date; sharing EHR (co
 \addlinespace
 Exposures & Cohort quartiles (Q1 reference) of Fitbit sleep and activity metrics; combined set adds mutually adjusted sleep $+$ activity models \\
 \addlinespace
-Outcomes & \code{has_gerd_no_eso} (GERD without oesophagitis, seed 4144111) and
+Outcomes & \code{has_gerd_any} (GERD, seed 318800) and
 \code{has_esophagitis} (oesophagitis, seed 30753); $\geq 2$ records each, two separate pulls,
 parallel rather than nested \\
 \addlinespace
@@ -826,7 +313,7 @@ the outcome loop is internal to a single script, not split across scripts.
 \toprule
 Outcome & (A) Sleep exposures & (B) Activity exposures & (C) Combined (activity $+$ sleep) \\
 \midrule
-\code{has_gerd_no_eso} \newline (GERD without oesophagitis) &
+\code{has_gerd_any} \newline (GERD) &
 \textbf{C1}. File \code{Sleep and GERD Analysis File R9.R}; output \code{R9_final_analysis_sleep_gerd_df.rds} &
 \textbf{C3}. File \code{Activity and GERD Analysis File R9.R}; output \code{R9_final_analysis_activity_gerd_df.rds} &
 \textbf{C5}. File \code{Activity Sleep and GERD Analysis File R9.R}; output \code{R9_final_analysis_activity_sleep_gerd_df.rds} \\
@@ -901,14 +388,12 @@ notebook is edited.}
 \label{tab:deliverables}
 \end{table}
 
-A dedicated outcome pull is required because the existing comorbidity object
-\code{R9_condition_df.rds} does not contain GERD condition records. The outcome upload therefore seeds
-the two GERD concepts and expands to all standard descendants using the \code{cb_criteria} path-match
-pattern. Because that pull is already GERD-only, \code{has_gerd_no_eso} is computed over all pulled rows
-rather than by re-filtering on only the two seed concept identifiers; re-filtering on the seeds alone
-would incorrectly drop descendant-coded cases. \code{has_esophagitis} is then identified within the
-a single pull by a concept-name match. That approach has been superseded: each phenotype now comes from
-its own descendant-expanded pull, so membership depends only on which file a record is in.
+A dedicated outcome pull is required because the existing comorbidity object does not contain GERD
+condition records. Each outcome is seeded on its own concept and expanded to all standard descendants.
+Because each pull is already restricted to its own concept set, the phenotype is computed over all rows
+of that file rather than by re-filtering on the seed identifier; re-filtering on the seed alone would
+incorrectly drop descendant-coded cases. Membership therefore depends only on which file a record is in,
+rather than on a concept-name match within a single combined pull.
 
 \subsection{Shared-Helper Architecture and Statistical Identity}
 \label{sec:model-not-here}
@@ -1004,7 +489,7 @@ proxy for this autonomic/fitness axis.
 Sleep deprivation lowers visceral pain thresholds, so the same acid exposure can produce more symptoms.
 This pathway acts preferentially on the symptom-defined broad GERD phenotype rather than on objective
 mucosal injury, and it is the principal reason the two outcomes are analyzed in parallel: an exposure
-that acts through perception should show a stronger association with \code{has_gerd_no_eso} than with
+that acts through perception should show a stronger association with \code{has_gerd_any} than with
 \code{has_esophagitis}, whereas one acting through acid contact time should show the reverse or an equal
 association.
 
@@ -1048,6 +533,74 @@ All queries and derived data use the Controlled Tier Curated Data Repository, ve
 \code{Sys.setenv(WORKSPACE_CDR = "fc-aou-cdr-prod-ct.C2024Q3R9")} so that concept expansions resolve
 against the intended release. All person-level data remain inside the secure \emph{All of Us}
 workspace; only code is version-controlled, and this report contains no individual-level data.
+
+\subsection{The three Workbench datasets}
+The GERD analysis is built entirely from three datasets the study team
+exported to Workspace Resources. It reads nothing from the project's
+pre-existing \code{.rds} objects, which are the same objects behind the
+published IBS paper:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{9.5cm}@{}}
+\toprule
+\textbf{Dataset} & \textbf{Supplies} \\
+\midrule
+\code{Demographic\_and\_Fitbit\_Data} & Demographics; Fitbit sleep, steps and heart rate (the exposures) \\
+\code{EHR\_Data} & Conditions, procedures and drug exposures (the outcomes, comorbidities and medications) \\
+\code{Survery\_Data} & Survey covariates and BMI \\
+\code{Antidepressants}, \code{Antipsychotics}, & \\
+\code{Beta\_Blockers}, \code{Calcium\_Blockers}, & Medication covariates, one export per class \\
+\code{Narcotics} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The five medication exports are \emph{authoritative} for their class:
+membership of the \code{Narcotics} export establishes opioid exposure without
+depending on an ingredient name matching a pattern. Tricyclics are separated out
+of the antidepressant export by name, because the sleep-medication covariate
+requires that class specifically. Folders are located by name anywhere beneath
+\code{\textasciitilde/workspace}, since they have already been reorganised once
+during the study.
+
+\noindent All three carry \code{person\_id}, and the build merges on it. The
+crucial point is that \textbf{the GERD cohort is not the IBS cohort}: nothing is
+read from \code{rds\_backup}, so the two studies share no denominator and the
+GERD numbers cannot inherit an IBS-era eligibility decision.
+
+\paragraph{Two properties of the export that the build has to handle.}
+First, the Workbench applies a \code{T\_DISP\_} convention: a column \code{X}
+holds a coded value and \code{T\_DISP\_X} the readable text. Reading \code{X}
+where a name is expected silently yields concept ids. Second, the pre-aggregated
+Fitbit tables (\code{sleepDailySummary}, \code{activitySummary}) are entirely
+NULL in this export, while the underlying \code{sleepLevel} table is fully
+populated. The nightly sleep metrics are therefore reconstructed from
+\code{sleepLevel}:
+\[
+\text{minute\_asleep} = \text{asleep} + \text{deep} + \text{light} + \text{rem},
+\qquad
+\text{minute\_awake} = \text{awake} + \text{wake},
+\]
+with \code{minute\_in\_bed} the sum of every level. The first form covers
+stages-capable devices, the second the classic logs. Wear time, which the export
+has no column for, is recovered as the sum of \code{minute\_in\_zone} across
+heart-rate zones, so the $\geq 10$-hour valid-day rule still applies. Heart-rate
+zone minutes stand in for the empty active-minute columns; they are
+\emph{heart-rate} based rather than accelerometer based and are labelled as such.
+
+\subsection{Obtaining the outcome records}
+The body describes \code{GERD Outcome Data Upload R9.R}, which queries
+\code{fc-aou-cdr-prod-ct.C2024Q3R9} and exports through Cloud Storage. In the
+migrated workspace that project lies \emph{outside} the VPC Service Controls
+perimeter, and every request fails with
+\code{policyViolation}. The replacement,
+\code{GERD_PULL_OUTCOMES_BIGQUERY.R}, resolves the BigQuery dataset attached to
+the workspace as a Resource (e.g.\ \code{C2025Q4R6}, which is inside the
+perimeter), expands descendants through \code{concept_ancestor} with a
+\code{cb_criteria} fallback, restricts to the Fitbit cohort's \code{person_id}s,
+and downloads directly --- removing the Cloud Storage hop entirely. The original
+script is retained for workspaces with classic All of Us BigQuery access.
 
 \subsection{Wearable and EHR inputs}
 The analysis draws on three Fitbit streams and four EHR/survey domains. The sleep stream provides
@@ -1223,69 +776,69 @@ during development and are catalogued in Section~\ref{sec:defects}.
 \section{Outcome Ascertainment: GERD and Oesophagitis}
 %======================================================================
 
-\subsection{Two parallel phenotypes}
-Both outcomes follow the project's ``$\geq 2$ diagnosis codes'' specificity rule:
-\begin{align*}
-\texttt{has\_gerd} &= \mathbb{1}\{\text{$\geq 2$ GERD condition records}\}, \\
-\texttt{has\_esophagitis} &= \mathbb{1}\{\text{$\geq 2$ GERD records named ``esophagitis''}\}.
-\end{align*}
-The two phenotypes come from two \emph{separate} descendant-expanded pulls, so neither is a subset of
-the other. \code{has_gerd_no_eso} is reflux disease coded explicitly as being \emph{without}
-oesophagitis; \code{has_esophagitis} is oesophagitis. They are not mutually exclusive --- a participant
-may accumulate codes of both kinds over time, for instance if oesophagitis is documented at one
-endoscopy and non-erosive reflux coded at a later visit --- and the upload script reports that overlap
-so it can be quantified in the manuscript.
-The two outcomes are nonetheless analyzed as \emph{separate} binary outcomes on the full cohort
-(non-cases coded \code{FALSE}). Broad GERD is dominated by symptom-coded reflux and behaves partly as a
-disorder of gut--brain interaction; oesophagitis isolates the erosive subset with objective mucosal
-injury and is rarer. Requiring two records reduces misclassification from single ``rule-out'' codes and
-is the same heuristic used across the FGID portfolio.
-
-\subsection{Seed concepts and descendant expansion}
-A single BigQuery/Cohort Builder pull seeds two standard SNOMED concepts and expands to all standard,
-selectable descendants using the \emph{All of Us} \code{cb_criteria} hierarchy pattern (the same
-mechanism used for the constipation outcome).
+\subsection{Two outcomes}
+The study models two binary outcomes, each ascertained from the electronic
+health record and each requiring at least two condition records.
 
 \begin{table}[h]
 \centering
-\begin{tabular}{@{}r l@{}}
+\begin{tabular}{@{}l l l@{}}
 \toprule
-\textbf{Concept ID} & \textbf{Standard concept name} \\
+\textbf{Outcome} & \textbf{Source} & \textbf{Rule} \\
 \midrule
-4144111 & Gastroesophageal reflux disease without oesophagitis \\
-30753 & Oesophagitis \\
+\code{has_gerd_any}    & seed \textbf{318800} (SNOMED 235595009) + descendants & $\geq 2$ records \\
+\code{has_esophagitis} & seed \textbf{30753} (SNOMED 16761005) + descendants   & $\geq 2$ records \\
 \bottomrule
 \end{tabular}
-\caption{GERD seed concepts. The \code{cb_criteria} join expands these to all standard descendants, so
-the pulled table carries many descendant \code{condition_concept_id} values beyond the two seeds.}
 \end{table}
 
-\noindent The nested \code{SELECT} against \code{cb_criteria} converts the seed concepts to hierarchy
-\code{id}s (restricted to standard ``rank-1'' rows), then matches any condition concept whose
-materialized \code{path} lies on, under, or above those ids---capturing the entire descendant subtree.
-The outer query restricts to Fitbit-sharers (\code{has_fitbit = 1}) and joins concept names for
-readability. Concept IDs are seeds to be confirmed/expanded in the Cohort Builder before a production
-run; the recommended workflow searches ``gastroesophageal reflux'' and ``reflux esophagitis,'' selects
-the standard concept plus descendants, and pastes the full seed set into the \code{concept_id IN (\ldots)}
-clause.
+\noindent Erosive oesophagitis (\textbf{4231067}) is folded into the
+oesophagitis concept set: it is the same phenotype coded with more specificity,
+and excluding it would place those participants in the ``no oesophagitis''
+group. The two outcomes are not mutually exclusive --- a participant may carry
+codes for both, and that overlap is reported descriptively rather than being
+made into a third outcome.
+
+\paragraph{The six analysis configurations.} Two outcomes crossed with three
+exposure sets:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l c c@{}}
+\toprule
+\textbf{Exposure set} & \textbf{\code{has_gerd_any}} & \textbf{\code{has_esophagitis}} \\
+\midrule
+(A) Sleep quartiles                  & Config 1 & Config 2 \\
+(B) Activity quartiles               & Config 3 & Config 4 \\
+(C) Combined (+ mutually adjusted)   & Config 5 & Config 6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Each configuration produces Table 1, Table 2, two supplementary
+tables, two figures and a diagnostics summary. The spline analysis of
+restricted cubic splines and the head-to-head comparison, specified later in
+this report, run over the same six.
+
+\paragraph{What is retained descriptively.} \code{build\_gerd\_outcomes()}
+derives a non-oesophagitic flag and the count of participants carrying any
+oesophagitis record, and prints both under a \textsc{descriptive (not modelled)}
+heading. The GERD/oesophagitis overlap is a number the manuscript reports, and
+it should come from the same code path that defines the outcomes rather than a
+separate tabulation. Nothing about it enters a model, a table, or the
+multiplicity correction.
+
+\paragraph{Multiplicity.} Bonferroni correction is applied within outcome,
+across exposures.
 
 \subsection{The descendant-filter subtlety}
 \label{sec:subtlety}
-Because \code{R9_gerd_outcome.rds} is \emph{already} a GERD-only pull (every row is a GERD descendant
-concept set, each phenotype is computed over \emph{all} rows of its own file rather than by re-filtering
-on the seed ID. Re-filtering on only \code{c(4144111)} or \code{c(30753)} would silently drop every
-descendant-coded case and badly undercount the phenotype. The analysis therefore keeps a documented
-\code{GERD_CONCEPT_IDS} vector for transparency but leaves the in-analysis \code{filter()} commented
-out; a user who exports the \emph{full} descendant list may paste it in and enable the explicit filter.
-
-\subsection{Identifying the oesophagitis subset}
-Earlier versions of this study used a single broad-GERD pull and carved out an oesophagitis subset by
-concept-name matching,
-\code{grepl("esophagitis|oesophagitis", standard_concept_name, ignore.case = TRUE)}. This robustly
-captures ``GERD with esophagitis'' and its descendants even if the exact descendant concept IDs vary
-across releases, and it is applied identically in the outcome-upload preview and in all three analysis
-files. A user who wishes to capture reflux/erosive esophagitis concepts that are \emph{not} descendants
-of the two GERD seeds can add those seed IDs to the pull (documented in the upload script).
+Each pull is \emph{already} restricted to its own descendant-expanded concept
+set, so each phenotype is computed over \emph{all} rows of its own file rather
+than by re-filtering on the seed id. Re-filtering on only \code{c(318800)} or
+\code{c(30753)} would silently drop every descendant-coded case and badly
+undercount the phenotype. Membership is therefore determined purely by which
+file a record came from.
 
 \subsection{Case-definition variants}
 \begin{table}[h]
@@ -1294,16 +847,15 @@ of the two GERD seeds can add those seed IDs to the pull (documented in the uplo
 \toprule
 \textbf{Variable} & \textbf{Rule} & \textbf{Purpose} \\
 \midrule
-\code{has_gerd_no_eso} & $\geq 2$ records in the 4144111 pull, first $\geq 180$ days after the first Fitbit record & Primary GERD-without-oesophagitis outcome (paper-matching temporal rule; \code{GERD_PRIMARY_DEF} switches to the ``ever'' rule). \\
-\code{has_esophagitis} & $\geq 2$ esophagitis-named records & Primary erosive outcome. \\
-\code{has_gerd_no_eso_dates} & $\geq 2$ records on \emph{distinct} dates & Specificity sensitivity check. \\
-\code{has_post_fitbit_gerd} & first GERD $\geq 180$ days after first Fitbit, then $\geq 2$ codes &
-Temporal ordering; reverse-causation guard. \\
-\code{severe_gerd_binary} & GERD \emph{and} $\geq 2$ post-diagnosis PPI/$H_2$RA dates & Optional
-medication-treated (severe) GERD. \\
+\code{has_gerd_any} & $\geq 2$ records in the 318800 pull, first $\geq 180$ days after the first Fitbit record & Primary GERD outcome (paper-matching temporal rule; \code{GERD_PRIMARY_DEF} switches to the ``ever'' rule). \\
+\code{has_esophagitis} & $\geq 2$ records in the 30753 pull & Primary erosive outcome. \\
+\code{has_gerd_any_sens} & the alternative case definition & Sensitivity analysis. \\
+\code{has_eso_any_record} & $\geq 1$ oesophagitis record & Descriptive only: quantifies the overlap between the two outcomes. \\
+\code{has_gerd_no_eso} & GERD case with no oesophagitis record & Descriptive only; not modelled (see above). \\
+\code{severe_gerd_binary} & GERD \emph{and} $\geq 2$ post-diagnosis PPI/$H_2$RA dates & Optional medication-treated (severe) GERD. \\
 \bottomrule
 \end{tabular}
-\caption{Outcome and case-definition variants.}
+\caption{Outcome and case-definition variants. Only the first two are modelled.}
 \end{table}
 
 %======================================================================
@@ -1502,6 +1054,28 @@ implied by meeting the stream-specific validity threshold ($\geq 180$ sleep nigh
 days, or both for the combined cohort). Sleep cleaning additionally applies the main-sleep,
 valid-minute, and short-sleep rules of the previous section.
 
+\subsection{Clinical exclusions}
+\paragraph{(iii) Foregut surgery and upper gastrointestinal cancer are exclusions.}
+A myotomy deliberately cuts the lower oesophageal sphincter, so reflux afterwards
+is produced \emph{by the operation}. Fundoplication, gastrectomy, bariatric
+surgery and oesophagectomy likewise change the anatomy that generates reflux.
+Oesophageal and gastric cancer alter eating, weight and sleep, produce
+reflux-like symptoms, and lead to major surgery. Neither group is comparable to
+the population this study is about, so both are removed rather than adjusted for.
+Achalasia is retained as an exclusion: it mimics reflux and is the indication for
+the myotomies above.
+
+Oesophageal dilation and bougienage are deliberately \emph{not} excluded. They
+treat a stricture, which is a consequence of reflux rather than a cause;
+excluding them would remove severe-reflux participants and bias the association
+towards the null. They are available as covariates.
+
+Concept ids exist for achalasia (318186), oesophageal malignancy (4181343),
+oesophagectomy (4187533) and gastrectomy (4203442). Heller myotomy, POEM and
+cricopharyngeal myotomy have no id in this workspace's concept set but appear by
+name in the procedure export, so exclusion matches on concept id where one
+exists and on name where it does not.
+
 \subsection{CONSORT accounting}
 Each analysis file reproduces a CONSORT-style waterfall counting unique participants surviving each
 step, from ``any Fitbit record'' through the final analytic cohort, recording the number excluded and
@@ -1622,6 +1196,64 @@ covariates are added because they are clinically entangled with GERD: peptic ulc
 (\code{has_ibs}), rebuilt \emph{as a covariate} from \code{R9_condition_df} using the same pre-Fitbit,
 $\geq 2$ distinct-dates rule so that GERD and IBS can co-occur while the temporal rule stays consistent.
 
+
+\subsection{Confounding control on GERD expert review}
+A GERD expert reviewed the protocol and required three changes. All are
+implemented in \code{GERD Concepts R9.R} and \code{GERD Analysis Helpers R9.R}.
+
+\paragraph{(i) Sleep medication is now an adjustment variable.}
+Tricyclic antidepressants (amitriptyline, nortriptyline, doxepin and related)
+and hypnotics --- both benzodiazepine (triazolam/Halcion, temazepam) and
+non-benzodiazepine (zolpidem, eszopiclone) --- alter sleep duration and
+architecture \emph{and} several reduce lower oesophageal sphincter tone. Omitting
+them attributes a pharmacological effect to sleep itself. The covariate
+\code{on\_sleep\_med} is the union of the three classes; the components are
+retained so the composite is auditable and any one class can be modelled alone.
+
+\paragraph{(ii) Obstructive sleep apnoea is now an adjustment variable.}
+This is the dominant confounder of any sleep--reflux association. Apnoea causes
+both fragmented sleep and reflux, and it travels with obesity. An unadjusted
+estimate of "poor sleep $\rightarrow$ GERD" partly measures undiagnosed apnoea
+instead. \code{has\_sleep\_apnea} (concept 313459) enters every adjusted model.
+
+\paragraph{(ii-b) Opioid analgesics are adjusted for.}
+Added when the study team exported a dedicated \code{Narcotics} dataset. Opioids
+delay gastric emptying and reduce lower oesophageal sphincter tone, and they
+fragment sleep --- they confound both sides of the association, so leaving them
+out would load an opioid effect onto the sleep coefficient.
+
+\paragraph{The adjustment set, as revised.}
+\[
+\begin{aligned}
+\text{logit}\,\Pr(\text{outcome}) = \beta_0 &+ \beta_1 \text{Exposure quartile}
+ + \gamma_1 \text{age} + \gamma_2 \text{sex} + \gamma_3 \text{race} + \gamma_4 \text{ethnicity} \\
+ &+ \gamma_5 \text{education} + \gamma_6 \text{income}
+   + \gamma_7 \text{smoking} + \gamma_8 \text{alcohol} + \gamma_9 \text{BMI} \\
+ &+ \gamma_{10}\,\textbf{sleep apnoea} + \gamma_{11}\,\textbf{sleep medication} \\
+ &+ \gamma_{13} \text{depression} + \gamma_{14} \text{anxiety}
+   + \gamma_{15} \text{diabetes} + \gamma_{16} \text{hypertension}
+   + \gamma_{17} \text{peptic ulcer disease}
+\end{aligned}
+\]
+
+\noindent Two departures from the published IBS template. \code{has\_ibs} is
+dropped: IBS is not in this workspace's concept set, so it was constant and
+contributed nothing. The comorbidity index is dropped from the default set: it
+is built from congestive heart failure, COPD, type 2 diabetes and peptic ulcer
+disease, so including it alongside \code{has\_diabetes} and \code{has\_pud}
+double-counts them. Diabetes and hypertension are adjusted for explicitly
+instead, which is both what the expert asked for and more interpretable.
+Setting \code{GERD\_USE\_COMORBIDITY\_INDEX <- TRUE} restores the index in place
+of the explicit flags. Note that the index available here is a \emph{partial}
+count over the four Charlson conditions present in this concept set --- it is
+not a validated Charlson Comorbidity Index and is labelled accordingly in every
+table.
+
+\paragraph{Participant flow.} The build writes \code{participant\_flow.csv}: the
+count at every step from "has Fitbit data" through the exposure minimum, EHR
+sharing, the age threshold and the clinical exclusions, for both the sleep and
+activity cohorts. The manuscript's flow figure is transcribed from that file
+rather than reconstructed after the fact.
 
 \subsection{Covariate provenance: reuse versus re-derivation}
 \label{sec:covstrategy}
@@ -1788,7 +1420,7 @@ sleep_results <- analyze_all_outcomes(modeling_df, exposures = SLEEP_EXPOSURES,
   from a candidate vector, logging which one it used. This is the mechanism behind
   prefer-pre-built-else-derive, and it makes provenance explicit in the run log.
   \item \code{build_gerd_outcomes(pull, fitbit_dates, date_col)} --- derives all four outcome columns
-  (\code{has_gerd_no_eso_ever}, \code{has_gerd_no_eso_post_fitbit}, and the two oesophagitis equivalents) from the
+  (\code{has_gerd_any_ever}, \code{has_gerd_any_post_fitbit}, and the two oesophagitis equivalents) from the
   single pull, and prints the case counts under each rule.
   \item \code{gerd_load_covariates(anchor, ...)} --- assembles the covariate bundle for the sleep or
   activity anchor, applying the column-slimming rules of Section~\ref{sec:joinhazards} and coalescing
@@ -1910,7 +1542,7 @@ with the sleep effect on oesophagitis (C2) or the activity effect on GERD (C3).
 The analysis does not emit exploratory objects for later reshaping; it emits the manuscript's tables
 and figures directly. Running any driver writes, for \emph{both} outcomes, a fixed set of files into
 \code{./manuscript_output/}, prefixed by exposure set (\code{sleep_}, \code{activity_},
-\code{combined_}) and then by outcome (\code{gerd_no_eso_}, \code{esophagitis_}).
+\code{combined_}) and then by outcome (\code{gerd_any_}, \code{esophagitis_}).
 
 \begin{table}[h]\centering\footnotesize
 \begin{tabular}{@{}p{6.0cm}p{7.6cm}@{}}
@@ -2067,6 +1699,81 @@ against $4/N$); and \textbf{(5)} linearity in the logit for continuous covariate
 x$ term for median BMI). It runs for both outcomes of every configuration.
 
 %======================================================================
+%======================================================================
+Two analyses now estimate the same associations, which raises an obvious
+question that should not require reading two sets of tables side by side to
+answer. \code{GERD Quartile vs Spline Comparison R9.R} answers it in one file
+per cohort, written at the end of the spline run.
+
+\subsection{Making the comparison fair.} Three differences would make a naive
+side-by-side misleading. All three are eliminated by \emph{refitting} every
+model inside the comparison rather than reading the two analyses' output files.
+
+\begin{enumerate}
+\item \textbf{The contrasts differ.} The quartile model reports Q4 versus Q1;
+the spline reports the 75th versus the 25th percentile. Q4 versus Q1 contrasts
+the middles of the top and bottom quarters, which lie further apart than
+$P_{75}$ and $P_{25}$, so comparing the two directly would show an effect-size
+difference that is an artefact of the contrast rather than of the method. The
+comparison therefore evaluates the spline at the \emph{median of Q1} and the
+\emph{median of Q4}, so both columns answer the same question. The
+$P_{75}$-versus-$P_{25}$ contrast is retained in its own columns.
+\item \textbf{The row sets differ.} The spline analysis trims to the
+1st--99th percentile; the quartile analysis does not. AIC and interval widths
+are not comparable across different rows, so the trim is applied to both.
+\item \textbf{The covariate sets can differ.} The sparsity guard may drop
+different covariates in the two fits. Here it runs once and the surviving set is
+used for all three models.
+\end{enumerate}
+
+\noindent With those controlled, any remaining difference is attributable to the
+exposure parameterisation, which is the only thing under test.
+
+\subsection{What each row reports.} Odds ratios from both methods on the matched
+contrast; $\Delta$AIC (spline minus quartile, negative favouring the spline);
+the ratio of confidence-interval widths on the log-odds scale, below one meaning
+the spline is more precise; the non-linearity $p$-value; and a plain-language
+\code{verdict}:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{8.2cm}@{}}
+\toprule
+\textbf{Verdict} & \textbf{Meaning} \\
+\midrule
+\textsc{spline adds}: non-linear & The relationship is not log-linear. The quartile table understates it; the spline figure should carry the interpretation. \\
+\textsc{spline adds}: association only the spline detects & The quartile model missed it. \\
+disagree & The two methods differ on significance. Investigate before reporting either. \\
+agree; spline more precise & Same conclusion, narrower interval. \\
+agree & Same conclusion. Report quartiles as primary; cite the spline as confirming log-linearity. \\
+unstable & Too few cases. Suppressed on whichever side is affected; not reportable. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why this is worth having even when the answer is ``no''.} A verdict of
+\emph{agree} across the board is a substantive result, not a null one: it
+establishes that the quartile estimates are not an artefact of where the
+cut-points fell, and it forecloses the reviewer question ``did you check the
+functional form?''. One methods sentence then covers it.
+
+\subsection{The case this exists to catch.} During validation, a simulated
+symmetric U-shape produced a quartile odds ratio of $1.00$ (0.91--1.11) --- an
+exactly null result --- because Q1 and Q4 sit at comparable risk when the
+minimum lies in the middle, so the contrast between them cancels. The spline
+recovered the same relationship with $p_{\text{non-linearity}} < 10^{-4}$ and
+$\Delta\mathrm{AIC} = -2049$. A quartile analysis alone would have reported no
+association where a strong one exists. This is not a hypothetical failure mode:
+it is the specific reason a sleep exposure warrants the check, since both short
+and long sleep are plausibly associated with reflux.
+
+\subsection{Stability applies to both sides}
+The suppression rules of the spline section
+are applied to the quartile estimate as well as the spline. A quartile model is
+no less capable of degeneracy --- validation produced one with an odds ratio of
+$4.9 \times 10^9$ --- and a table that suppressed only the spline would imply
+the other side was trustworthy when it was not.
+
 \section{The Six Analysis Configurations in Detail}\label{sec:six-configs-ref}
 %======================================================================
 The design crosses two outcomes with three exposure sets. The six resulting configurations are
@@ -2095,7 +1802,7 @@ C6 & Oesophagitis & Combined (15 + pairs) & Intersection & Activity Sleep and GE
 
 \subsection{C1 --- Sleep and broad GERD}
 The reference configuration. On the $\geq 180$-night sleep cohort, each of the eight sleep quartiles is
-regressed on \code{has_gerd_no_eso} unadjusted and then adjusted for the full covariate set, with a
+regressed on \code{has_gerd_any} unadjusted and then adjusted for the full covariate set, with a
 full-vs-backward pairing per exposure. This is the direct GERD analogue of the project's IBS sleep
 study and the primary test of the ``better sleep, lower reflux odds'' hypothesis.
 
@@ -2107,7 +1814,7 @@ not only on symptom reporting.
 
 \subsection{C3 --- Activity and broad GERD}
 On the $\geq 30$-valid-day activity cohort, the seven activity quartiles (steps, four activity-intensity
-bands, sedentary minutes, and corrected max heart rate) are modeled against \code{has_gerd_no_eso}. Sedentary
+bands, sedentary minutes, and corrected max heart rate) are modeled against \code{has_gerd_any}. Sedentary
 time and low step counts are hypothesized to associate with higher odds; the corrected max-HR exposure
 provides a cardiovascular-fitness proxy.
 
@@ -2266,6 +1973,188 @@ the configuration is underpowered for the adjustment set, and that its estimates
 interpreted as exploratory.
 
 %======================================================================
+\section{Secondary Analysis: Restricted Cubic Splines}
+%======================================================================
+The primary analysis divides each exposure into quartiles. That is robust,
+makes no functional-form assumption, and matches the published template --- but
+it discards within-quartile variation, imposes step changes at cut-points that
+carry no biological meaning, and cannot recover the \emph{shape} of a
+dose--response relationship. A U-shaped association, in which both very short
+and very long sleep carry elevated odds, is precisely the pattern a quartile
+model is least able to express: Q1 and Q4 both appear elevated relative to a
+mid-range reference, but the model cannot say where the minimum lies or whether
+the rise at either end is real.
+
+This section adds a spline analysis alongside the quartile models. It replaces
+nothing: both analyses are fitted on identical participants with an identical
+adjustment set, so any difference between them is attributable to the exposure
+parameterisation and to nothing else.
+
+\subsection{Methodological precedent.} The procedure follows Master et al.,
+\emph{Nature Medicine} 2022;28:2301--2308,
+``Association of step counts over time with the risk of chronic disease in the
+All of Us Research Program'' (doi:10.1038/s41591-022-02012-w). That study is the
+closest available precedent: the same cohort resource, Fitbit-derived exposures,
+EHR-derived outcomes, and Frank Harrell as senior methodologist. It also reports
+acid reflux among its outcomes, so the exposure--outcome pair examined here is
+one it examined directly.
+
+\subsection{Procedure.} For each continuous exposure:
+
+\begin{enumerate}
+\item Fit restricted cubic splines with 3, 4 and 5 knots in separate logistic
+models, each adjusted for the full covariate set.
+\item Select the knot count with the lowest AIC. All three candidates are fitted
+on the same rows, so the comparison is valid.
+\item Test the exposure with Harrell's Wald ``chunk test'', reported as two
+separate quantities:
+\begin{itemize}
+\item \textbf{$p$-overall} --- jointly, are \emph{all} spline terms zero? This
+asks whether the exposure is associated with the outcome at all.
+\item \textbf{$p$-non-linearity} --- jointly, are the \emph{non-linear} terms
+zero? This asks whether that association departs from a straight line on the
+log-odds scale.
+\end{itemize}
+\item Report the effect as the odds ratio comparing the 75th to the 25th
+percentile of the exposure, matching the contrast Master et al.\ report.
+\item Plot the fitted curve with a 95\% confidence band across the observed
+range, referenced to the median.
+\end{enumerate}
+
+Knots sit at Harrell's recommended quantiles (\emph{Regression Modeling
+Strategies}, Table 2.3), which are the \code{rms::rcs()} defaults:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Knots} & \textbf{Quantiles} \\
+\midrule
+3 & 10, 50, 90 \\
+4 & 5, 35, 65, 95 \\
+5 & 5, 27.5, 50, 72.5, 95 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The spline basis.} With knots $t_1 < \cdots < t_k$, the basis is the
+truncated power form of \emph{Regression Modeling Strategies} eq.~2.25: the
+first column is $x$ itself and, for $j = 1, \ldots, k-2$,
+\[
+X_{j+1} = \frac{(x-t_j)_+^3
+ - (x-t_{k-1})_+^3\,\frac{t_k-t_j}{t_k-t_{k-1}}
+ + (x-t_k)_+^3\,\frac{t_{k-1}-t_j}{t_k-t_{k-1}}}{(t_k-t_1)^2}.
+\]
+The linear term occupying column one is what makes the two chunk tests a clean
+partition: dropping columns $2,\ldots,k-1$ leaves a model linear in $x$, and
+dropping all of them removes $x$ entirely. The basis is implemented directly
+rather than through \code{rms}, so the pipeline carries no additional dependency,
+and it is verified on load against \code{splines::ns()} --- the two bases span
+the same function space, so a model fitted with either must produce identical
+fitted values. The run aborts if that check fails.
+
+\subsection{Odds ratio curves.} For a model
+$\operatorname{logit}\Pr(Y=1) = \beta_0 + \mathbf{B}(x)^\top\boldsymbol\beta + \mathbf{Z}^\top\boldsymbol\gamma$,
+the odds ratio at $x$ relative to a reference $x_0$ is
+\[
+\mathrm{OR}(x \,\vert\, x_0) = \exp\!\big[(\mathbf{B}(x)-\mathbf{B}(x_0))^\top \boldsymbol\beta\big],
+\qquad
+\widehat{\mathrm{Var}} = \mathbf{d}^\top \mathbf{V}_{\boldsymbol\beta}\, \mathbf{d},
+\quad \mathbf{d} = \mathbf{B}(x)-\mathbf{B}(x_0).
+\]
+Every covariate is held fixed and cancels exactly, so only the spline block of
+the coefficient vector and its covariance sub-matrix are required. The reference
+and both contrast percentiles are placed on the evaluation grid, so the plotted
+curve passes exactly through $\mathrm{OR}=1$ at the reference rather than merely
+near it.
+
+\subsection{Two deliberate departures from Master et al.} Both follow from this
+study's design and are stated here so that neither is mistaken for an oversight.
+
+\begin{itemize}
+\item \textbf{Logistic regression, not Cox.} This study is cross-sectional.
+There is no follow-up time and no incident-event structure, so a proportional
+hazards model is not defined; odds ratios replace hazard ratios. Master et al.\
+likewise used logistic regression for their own cross-sectional screening step
+and reserved Cox models for the longitudinal analysis their repeated-measures
+design supported.
+\item \textbf{Complete-case, not multiple imputation.} The paper pooled results
+over five \code{aregImpute} datasets. Complete-case analysis is used here so
+that the spline and quartile models are fitted on exactly the same rows. Adding
+imputation to one arm only would confound a difference in \emph{shape} with a
+difference in \emph{missing-data handling}, which is the one comparison this
+section exists to make. Per-model missingness is reported so the cost is visible,
+and multiple imputation across both analyses remains available as a sensitivity
+analysis.
+\end{itemize}
+
+\subsection{Stability safeguards.} A spline model can converge and still be
+numerically meaningless. With few cases, cubic terms can yield an odds ratio of
+$10^5$ with a confidence interval spanning twenty orders of magnitude, and --- as
+observed during validation --- such a model can carry an apparently significant
+$p$-value. Three guards prevent that reaching a table:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}l p{8.4cm}@{}}
+\toprule
+\textbf{Guard} & \textbf{Action} \\
+\midrule
+CI ratio $>1000$ & Estimate suppressed, row marked \textsc{unstable} \\
+$\lvert \log \mathrm{OR}\rvert > \log 50$ & Estimate suppressed, row marked \textsc{unstable} \\
+Events per parameter $<10$ & Estimate retained, flagged as provisional \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Suppressed rows remain in the CSV with the reason recorded in
+\code{unstable\_why}, so nothing is silently discarded, but they are excluded
+from the shape classification and displayed as \code{--}. The events-per-variable
+threshold follows Peduzzi et al.\ (1996); it matters more here than in the
+quartile analysis because a 5-knot spline spends four degrees of freedom on the
+exposure alone.
+
+\subsection{Validation.} The implementation is verified against data with known
+structure before use: a simulated U-shape must be detected as non-linear with
+its minimum recovered in the right place; a simulated linear trend must be
+detected as an association but \emph{not} as non-linear; a null exposure must
+trigger neither test; and the 75th-versus-25th-percentile odds ratio must agree
+with an independently fitted linear-logit model. All four checks, together with
+the basis identity against \code{splines::ns()}, pass.
+
+\subsection{Outputs.} Written to \code{manuscript\_output\_splines/}, separate
+from the quartile outputs:
+
+\begin{itemize}
+\item \code{<cohort>\_spline\_summary.csv} --- one row per outcome $\times$
+exposure: selected knot count, knot locations, AIC, OR (75th vs 25th) with CI,
+both $\chi^2$ statistics with degrees of freedom, both raw and multiplicity-
+adjusted $p$-values, events per parameter, and a \code{shape} column reading
+\emph{linear}, \emph{non-linear}, \emph{no association} or \textsc{unstable}.
+\item \code{<cohort>\_<outcome>\_<exposure>\_spline.png} --- the fitted curve
+with its confidence band, knot locations, reference line, and the exposure
+distribution beneath, so that a wide interval in a sparse region is not misread
+as a finding.
+\item \code{<cohort>\_<outcome>\_<exposure>\_curve.csv} --- the plotted
+coordinates, so figures can be restyled for submission without refitting.
+\end{itemize}
+
+Multiplicity is handled exactly as in the primary analysis: Bonferroni within
+outcome, across exposures, governed by the same \code{GERD\_P\_ADJUST} setting.
+
+\subsection{Interpretation.} The two analyses answer different questions and
+should be read together. The quartile models give the manuscript's headline
+effect estimates in the familiar form; the spline models establish whether the
+quartile pattern reflects a genuine monotone gradient, a threshold, or a
+U-shape, and where any inflection lies. Where $p$-non-linearity is not
+significant, the linear-in-log-odds summary is adequate and the quartile
+estimates can be reported without qualification. Where it \emph{is} significant,
+the quartile table understates the relationship and the spline figure should
+carry the interpretation.
+
+%======================================================================
+\section{Quartile versus Spline: Did the Secondary Analysis Change Anything?}
+%======================================================================
 \section{Data Engineering, Quality Control, and Statistical Considerations}
 %======================================================================
 
@@ -2354,7 +2243,7 @@ robustness check.
 \label{sec:sensitivity}
 %======================================================================
 \begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
-  \item \textbf{Distinct-date GERD} (\code{has_gerd_no_eso_dates}) --- the stricter ``$\geq 2$ distinct dates''
+  \item \textbf{Distinct-date GERD} (\code{has_gerd_any_dates}) --- the stricter ``$\geq 2$ distinct dates''
   phenotype, testing robustness to same-day code inflation.
   \item \textbf{Post-Fitbit temporal GERD} (\code{has_post_fitbit_gerd}) --- restricts cases to those
   whose first GERD code appears $\geq 180$ days \emph{after} the first Fitbit date, so the measured
@@ -2389,7 +2278,7 @@ upload, but global find-and-replace was insufficient; whole blocks were removed,
 \toprule
 \textbf{Action} & \textbf{Detail} \\
 \midrule
-\textbf{Swapped} & \code{has_ibs} $\rightarrow$ \code{has_gerd_no_eso} plus \code{has_esophagitis}; outcome
+\textbf{Swapped} & \code{has_ibs} $\rightarrow$ \code{has_gerd_any} plus \code{has_esophagitis}; outcome
 labels; output filenames $\rightarrow$ \code{R9_final_analysis_*_gerd_df.rds}. \\
 \textbf{Swapped source} & IBS rows from \code{dataset_32338507_condition_df} $\rightarrow$ the dedicated
 \code{R9_gerd_outcome} pull. \\
@@ -2684,7 +2573,7 @@ directly comparable. Table~\ref{tab:portfolio} places GERD within the portfolio.
 IBS & \code{has_ibs} (+ subtypes) & Multinomial subtype models; severe-IBS medication subgroup. \\
 Functional dyspepsia & \code{has_fd} (strict/broad) & Rome-based phenotypes; early-satiety extension. \\
 Constipation & \code{has_constipation} & Simple binary outcome; heart-rate-correction activity analysis. \\
-\textbf{GERD / oesophagitis} & \code{has_gerd_no_eso}; \code{has_esophagitis} & Two nested acid-related phenotypes; PUD and IBS covariates; sleep, activity, and combined exposures under one shared engine. \\
+\textbf{GERD / oesophagitis} & \code{has_gerd_any}; \code{has_esophagitis} & Two acid-related phenotypes; PUD covariate; sleep, activity, and combined exposures under one shared engine. \\
 \bottomrule
 \end{tabular}
 \caption{The GERD/oesophagitis analysis within the functional-GI-disorder portfolio.}
@@ -2760,9 +2649,9 @@ whether sleep and activity are associated with reflux disease and its erosive fo
 \midrule
 \endhead
 \code{R9_gerd_outcome.rds} & Raw GERD condition records (+ \code{is_esophagitis} flag). \\
-\code{R9_gerd_status.rds} & \code{has_gerd_no_eso} ($\geq 2$ records) per participant. \\
+\code{R9_gerd_status.rds} & \code{has_gerd_any} ($\geq 2$ records) per participant. \\
 \code{R9_esophagitis_status.rds} & \code{has_esophagitis} ($\geq 2$ esophagitis-named records). \\
-\code{R9_gerd_status_dates.rds} & \code{has_gerd_no_eso_dates} ($\geq 2$ distinct dates). \\
+\code{R9_gerd_status_dates.rds} & \code{has_gerd_any_dates} ($\geq 2$ distinct dates). \\
 \code{R9_gerd_post_fitbit_sleep.rds} & \code{has_post_fitbit_gerd} temporal flag (sleep anchor). \\
 \code{R9_final_analysis_sleep_gerd_df.rds} & \textbf{Sleep} modeling frame (configs C1, C2). \\
 \code{R9_final_analysis_activity_gerd_df.rds} & \textbf{Activity} modeling frame (configs C3, C4). \\
@@ -2776,6 +2665,7 @@ whether sleep and activity are associated with reflux disease and its erosive fo
 \bottomrule
 \end{longtable}
 
+%======================================================================
 %======================================================================
 \section{Appendix B: Concept Reference}
 %======================================================================
@@ -3191,5 +3081,64 @@ Reverse causation & Outcome influences the measured exposure; addressed by the t
 \noindent\rule{\linewidth}{0.4pt}\\
 {\footnotesize \emph{End of report.} This document describes code and methodology only; it contains no
 individual-level \emph{All of Us} data.}
+
+
+%======================================================================
+\section{Appendix L: Design History and Protocol Amendments}
+%======================================================================
+The body of this report describes the study as it now stands. This appendix
+records how the specification changed during development, so that a reader
+comparing against an earlier draft, or against output files produced before a
+change, can see what moved and why. Nothing here is current methodology; it is
+provenance.
+
+\subsection{Outcome definition, amended twice}
+\begin{enumerate}
+\item \textbf{Original.} \code{has_gerd_no_eso} seeded on concept
+\textbf{4144111} (``GERD without oesophagitis''), pulled in parallel with
+oesophagitis (\textbf{30753}). Abandoned once the Cohort Builder showed
+substantial overlap between participants carrying 4144111 and participants
+carrying oesophagitis codes: participants accumulate both kinds of code over
+time, so the concept's label does not identify a non-oesophagitic group.
+\item \textbf{Intermediate.} Broad GERD (\textbf{318800}) with a
+``GERD without oesophagitis'' group derived by excluding oesophagitis carriers,
+giving three modelled outcomes and nine configurations.
+\item \textbf{Current.} Broad GERD and oesophagitis modelled directly, as two
+outcomes over three exposure sets. The derived non-oesophagitic flag is retained
+descriptively but is not modelled, does not appear in any table, and consumes no
+multiplicity budget.
+\end{enumerate}
+
+\noindent Output files carrying a \code{gerd_no_eso} prefix are from a run under
+design~2 and should be deleted before re-running.
+
+\subsection{Data source, amended}
+The study originally assembled its analysis frames from the project's existing
+\code{.rds} objects, which are the same objects behind the published IBS paper.
+It now builds everything from the three Workbench datasets described in the Data
+Sources section. The two studies therefore share no denominator, and a GERD
+number cannot inherit an IBS-era eligibility decision.
+
+\subsection{Outcome pull, amended}
+The original pull queried the \emph{All of Us} production CDR project directly
+and exported through Cloud Storage. In the migrated workspace that project lies
+outside the VPC Service Controls perimeter and every request failed. The
+replacement queries the BigQuery dataset attached to the workspace as a
+Resource, which is inside the perimeter, and downloads directly.
+
+\subsection{Confounding control, amended on expert review}
+Sleep medication, obstructive sleep apnoea and opioid analgesics were added to
+the adjustment set; foregut surgery and upper gastrointestinal cancer became
+exclusions rather than covariates; \code{has_ibs} was dropped as constant in
+this concept set; and the partial comorbidity index was removed from the default
+adjustment set because it double-counts diabetes and peptic ulcer disease. Each
+change and its rationale is documented in the Covariates and Cohort Construction
+sections.
+
+\subsection{Analysis, extended}
+The restricted cubic spline analysis and the quartile-versus-spline comparison
+were added after the primary quartile analysis was complete. Both are additive:
+no existing analysis file was modified, and the quartile results are unchanged by
+their presence.
 
 \end{document}
