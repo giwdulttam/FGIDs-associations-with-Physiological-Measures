@@ -82,6 +82,14 @@ dir.create(GB_OUT, recursive = TRUE, showWarnings = FALSE)
 .t0 <- Sys.time()
 gb_say <- function(...) { cat(format(Sys.time(), "%H:%M:%S"), " ", paste0(...), "\n", sep = ""); flush.console() }
 
+# Compact duration for progress lines: 45s / 12.3m / 1.4h.
+gb_dur <- function(secs) {
+  if (!is.finite(secs)) return("?")
+  if (secs < 90)   return(sprintf("%.0fs", secs))
+  if (secs < 5400) return(sprintf("%.1fm", secs / 60))
+  sprintf("%.1fh", secs / 3600)
+}
+
 # En-dashed factor levels and concept names need a UTF-8 locale; without it they
 # fail to match and covariates silently become NA.
 if (!grepl("UTF-8", Sys.getlocale("LC_CTYPE"), ignore.case = TRUE))
@@ -191,7 +199,14 @@ gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
   # progress line something to report.
   batch <- if (par_ok) max(1L, GB_WORKERS) * 4L else 25L
 
-  acc <- list(); done <- 0L
+  # Progress is projected on BYTES rather than shard count: shards vary in size,
+  # and a count-based estimate drifts badly when the big ones cluster.
+  sz     <- file.info(paths)$size
+  sz[is.na(sz)] <- 0
+  total_mb <- sum(sz) / 1024^2
+  t_start  <- Sys.time()
+
+  acc <- list(); done <- 0L; mb_done <- 0
   for (start in seq(1L, n, by = batch)) {
     idx  <- start:min(start + batch - 1L, n)
     part <- NULL
@@ -216,9 +231,19 @@ gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
            paste(basename(paths[idx][bad]), collapse = ", "), "\n",
            as.character(part[[which(bad)[1]]]), call. = FALSE)
 
-    acc  <- c(acc, part)
-    done <- done + length(idx)
-    gb_say("   ", label, ": ", done, "/", n, " shards")
+    acc     <- c(acc, part)
+    done    <- done + length(idx)
+    mb_done <- mb_done + sum(sz[idx]) / 1024^2
+
+    el   <- as.numeric(difftime(Sys.time(), t_start, units = "secs"))
+    rate <- if (el > 0) mb_done / el else NA_real_          # MB of input per second
+    eta  <- if (is.finite(rate) && rate > 0) (total_mb - mb_done) / rate else NA_real_
+    gb_say("   ", label, ": ", done, "/", n, " shards  (",
+           sprintf("%.0f%%", 100 * mb_done / max(total_mb, 1e-9)), ", ",
+           sprintf("%.1f", rate), " MB/s)",
+           if (is.finite(eta) && done < n)
+             paste0("  ETA ", gb_dur(eta), "  of ~", gb_dur(el + eta)) else
+             paste0("  done in ", gb_dur(el)))
     if (!is.null(collapse) && length(acc) > 1L) acc <- list(collapse(bind_rows(acc)))
     rm(part); invisible(gc(verbose = FALSE))
   }

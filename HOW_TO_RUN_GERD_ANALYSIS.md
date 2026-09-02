@@ -35,6 +35,21 @@ source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")
 Results land in `~/workspace/gerd_build/manuscript_output/` (quartiles) and
 `manuscript_output_splines/` (splines).
 
+> **Progress and ETA.** Every batch prints how far through it is, the current
+> throughput, and a projected finish:
+>
+> ```
+> sleepLevel: 96/500 shards  (19%, 2.8 MB/s)  ETA 24.1m  of ~29.8m
+> ```
+>
+> Projection is on bytes, not shard count, because shards vary in size. The
+> first batch or two read low while caches warm; after that it settles.
+>
+> **Use it to tune `GB_WORKERS`.** Run the dry run at `GB_WORKERS <- 2` and
+> again at `3`, compare the MB/s, and keep the faster one. On a 4-vCPU box the
+> best value is likely 2 or 3 — benchmarking here showed more workers than
+> physical cores makes it *slower*, not faster.
+
 > **Speed.** The build reads shards in parallel. It picks a worker count from
 > the machine automatically (cores minus one, capped at 8); override with
 > `GB_WORKERS <- 3` before sourcing, or `GB_WORKERS <- 1` to force the old
