@@ -107,14 +107,10 @@ for (.k in seq_along(.todo)) {
     gerd_compare_all(md, exposures = .expo[[nm]], stub = nm)
     sp
   }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e)); NULL })
-  .el <- as.numeric(difftime(Sys.time(), .wall, units = "secs"))
-  .eta <- .el / .k * (length(.todo) - .k)
   cat("\n---", nm, if (is.null(.res[[nm]])) "FAILED" else "COMPLETED", "in",
       round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
-  cat(sprintf("=== STEP 3 PROGRESS: %d/%d cohorts | elapsed %s | %s ===\n",
-      .k, length(.todo), gerd_dur(.el),
-      if (.k < length(.todo)) paste0("ETA ", gerd_dur(.eta), ", total ~", gerd_dur(.el + .eta))
-      else paste0("all cohorts done in ", gerd_dur(.el))))
+  gerd_overall(.k, length(.todo), .wall, "cohorts",
+               if (.k == length(.todo)) "STEP 3 COMPLETE" else paste0("running: ", .todo[.k + 1]))
 }
 
 ## ---- summary -----------------------------------------------------------------

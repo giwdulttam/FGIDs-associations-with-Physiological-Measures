@@ -167,6 +167,29 @@ gerd_dur <- function(secs) {
   sprintf("%.1fh", secs / 3600)
 }
 
+# A fixed-width text bar. Used by the two runners for their whole-run progress
+# line, so the build and the analysis look the same in the console.
+gerd_bar <- function(frac, width = 30L) {
+  frac <- max(0, min(1, if (is.finite(frac)) frac else 0))
+  full <- as.integer(round(frac * width))
+  paste0("[", strrep("=", full), strrep("-", width - full), "]")
+}
+
+# One whole-run line: bar, percent, elapsed, remaining, and the clock time the
+# run is expected to finish at. `done`/`total` are counts of major units.
+gerd_overall <- function(done, total, t0, unit = "cohorts", tag = "") {
+  frac <- if (total > 0) done / total else 0
+  el   <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  eta  <- if (done > 0 && done < total) el / done * (total - done) else NA_real_
+  cat(format(Sys.time(), "%H:%M:%S"), "  ", gerd_bar(frac), " ",
+      sprintf("%3.0f%%", 100 * frac), "  ", done, "/", total, " ", unit,
+      "  elapsed ", gerd_dur(el),
+      if (is.finite(eta)) paste0("  REMAINING ~", gerd_dur(eta),
+                                 "  finish ~", format(Sys.time() + eta, "%H:%M")) else "",
+      if (nzchar(tag)) paste0("  ", tag) else "", "\n", sep = "")
+  flush.console()
+}
+
 # Returns a function; call it once per completed item. ETA is projected from the
 # mean time per item so far, which is the right model here because the items
 # (one model fit per exposure) cost roughly the same.

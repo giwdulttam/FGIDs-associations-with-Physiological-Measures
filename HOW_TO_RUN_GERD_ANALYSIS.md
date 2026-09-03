@@ -35,20 +35,29 @@ source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")
 Results land in `~/workspace/gerd_build/manuscript_output/` (quartiles) and
 `manuscript_output_splines/` (splines).
 
+**You do not have to guess when to run the next line.** Each step prints a
+progress bar with a projected clock finish time while it works, and ends with a
+banner giving the exact next command. When you see `STEP 1 OF 3 COMPLETE`, run
+the step-2 line above; when you see `STEP 2 OF 3 COMPLETE`, run step 3. Nothing
+is held in memory between steps, so you can close the session and come back.
+
 **Every step reports progress and an ETA**, so you can tell early whether a
 multi-hour run is on track:
 
 ```
-sleepLevel: 96/500 shards  (19%, 2.8 MB/s)  ETA 24.1m  of ~29.8m     <- step 1
-   [models: has_gerd_any] 5/8 (62%)  elapsed 15s  ETA 9s  of ~23s    <- step 2
+   sleepLevel: reading shards 97-128 of 500 (3 workers)               <- step 1
+   sleepLevel: 128/500 shards  (26%, 2.8 MB/s)  ETA 21.4m  of ~29.8m
+14:43:12  [=========---------------------]  31%  step 1/8  read 5.1 GB of 16.4 GB  elapsed 9.2m  REMAINING ~20.5m  finish ~15:03
+   [models: has_gerd_any] 5/8 (62%)  elapsed 15s  ETA 9s  of ~23s     <- step 2
 [outcomes: sleep] 1/2 (50%)  elapsed 35s  ETA 35s  of ~69s
-=== STEP 2 PROGRESS: 1/3 cohorts | elapsed 68s | ETA 2.3m, total ~3.4m ===
-   [splines: has_gerd_any] 4/8 (50%) elapsed 8s  ETA 8s  of ~16s     <- step 3
+14:50:44  [==========--------------------]  33%  1/3 cohorts  elapsed 1.8m  REMAINING ~3.6m  finish ~14:54  running: activity
+   [splines: has_gerd_any] 4/8 (50%) elapsed 8s  ETA 8s  of ~16s      <- step 3
    [compare: has_gerd_any] 4/8 (50%) elapsed 6s  ETA 6s  of ~12s
 ```
 
-Three levels: per model, per outcome, and per cohort. The first estimates are
-rough and settle after a few items.
+Four levels: per batch, per model, per outcome, and — the bar — per whole run.
+The first estimates are rough and settle after a few items. The bar line is the
+one to watch: `finish ~15:03` is the clock time to come back at.
 
 > **Progress and ETA.** Every batch prints how far through it is, the current
 > throughput, and a projected finish:
@@ -73,6 +82,43 @@ rough and settle after a few items.
 >
 > On the `n1-highmem-4` (4 vCPU / 2 cores) the default gives 3 workers. Memory
 > scales with worker count, so lower it if the build runs out of memory.
+
+> **How to tell how far along you are.** Before it reads anything, the build
+> lists and measures every shard set and prints an inventory:
+>
+> ```
+>   step  what                       shards        size
+>   ----------------------------------------------------
+>    [1]  Sleep levels                  500      11.5 GB
+>    [2]  Activity: steps               120       2.1 GB
+>    [2]  Activity: heart rate           96       1.8 GB
+>    [3]  Conditions                     40       412 MB
+>    ...
+>   ----------------------------------------------------
+>         TOTAL TO READ                 812      16.4 GB
+> ```
+>
+> After every batch it prints one whole-build line:
+>
+> ```
+> 14:43:12  [==============----------------]  47%  step 3/8  read 7.7 GB of 16.4 GB  elapsed 12.1m  REMAINING ~13.6m  finish ~14:57
+> ```
+>
+> **`finish ~14:57` is the clock time to come back at.** Progress is measured in
+> bytes read, not steps done, because the steps are wildly unequal — `sleepLevel`
+> alone is usually more than half the input, so "2 of 8 done" would be nowhere
+> near 25%. Step 8 reads nothing (it joins and writes), so the bar sits at 100%
+> for its final minute or two; that is expected, and the build prints
+> `BUILD COMPLETE` when it is genuinely finished.
+>
+> Steps 2 and 3 print the same style of line, counting cohorts instead of bytes:
+>
+> ```
+> 14:50:44  [==========--------------------]  33%  1/3 cohorts  elapsed 1.8m  REMAINING ~3.6m  finish ~14:54  running: activity
+> ```
+>
+> Each step ends by printing the exact next line to run, so you never have to
+> look it up.
 
 > **If the console goes quiet at the start.** The build's first job is to find
 > your three data folders under `~/workspace`. It now reports that scan as it
@@ -113,8 +159,17 @@ rough and settle after a few items.
 >    sleepLevel: 12/500 shards  (2%, 2.8 MB/s)  ETA 28.1m  of ~29.8m
 > ```
 
-> **Do a dry run first.** Open `GERD Build Cohort From Export.R`, set
-> `GB_MAX_SHARDS <- 20`, and run step 1. It finishes in a few minutes and proves
+> **Do a dry run first.** Set `GB_MAX_SHARDS` in the console *before* sourcing —
+> no need to edit the file any more:
+>
+> ```r
+> GB_MAX_SHARDS <- 20
+> source("~/workspace/gerd_code/GERD Build Cohort From Export.R")
+> ```
+>
+> (Until now that knob was assigned unconditionally inside the script, so
+> setting it in the console was silently ignored and your "dry run" was a full
+> run. It is guarded like the others now.) It finishes in a few minutes and proves
 > the whole path works end to end. Set it back to `Inf` for the real run — the
 > script warns loudly that a capped run is a dry run, not final numbers.
 

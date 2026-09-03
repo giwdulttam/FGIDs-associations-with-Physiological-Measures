@@ -73,7 +73,12 @@ GB_STEPS_RANGE      <- c(100, 45000)   # a valid activity day
 GB_MIN_WEAR_HOURS   <- 10     # NA disables the wear filter
 GB_SHORT_SLEEP_MIN  <- 240    # "short night" threshold
 GB_MAX_SHORT_PROP   <- 0.30   # drop participants with >=30% short nights
-GB_MAX_SHARDS       <- Inf    # set e.g. 20 for a fast dry run
+# Set e.g. 20 for a fast dry run. Guarded like every other knob, so
+#   GB_MAX_SHARDS <- 20
+# in the console before sourcing is honoured. It used to be an unconditional
+# assignment, which silently overwrote whatever you had just typed -- the dry
+# run then quietly became a full run. Default is unchanged: read everything.
+if (!exists("GB_MAX_SHARDS")) GB_MAX_SHARDS <- Inf
 
 # Shard readers to run at once. Shards are independent, so this is pure
 # throughput -- it does not change any result (see gb_stream). One core is left
@@ -101,6 +106,58 @@ gb_dur <- function(secs) {
   if (secs < 90)   return(sprintf("%.0fs", secs))
   if (secs < 5400) return(sprintf("%.1fm", secs / 60))
   sprintf("%.1fh", secs / 3600)
+}
+
+# ------------------------------------------------------------------------------
+# Whole-build progress.
+#
+# Progress is measured in BYTES READ, not steps completed. Step count would be
+# badly misleading: sleepLevel alone is usually more than half the total input,
+# so "[2/8] done" is nowhere near 25% of the work. Every shard set is listed and
+# measured up front (see the inventory below), which makes a single honest
+# percentage and finish time possible from the first batch onwards.
+# ------------------------------------------------------------------------------
+GB_TOTAL_BYTES <- 0      # filled in by the inventory
+GB_BYTES_DONE  <- 0      # advanced by gb_stream after each batch
+GB_STEP_NOW    <- 0      # which of the 8 steps is running
+
+gb_size <- function(bytes) {
+  if (!is.finite(bytes)) return("?")
+  if (bytes >= 1024^3) sprintf("%.1f GB", bytes / 1024^3) else
+  if (bytes >= 1024^2) sprintf("%.0f MB", bytes / 1024^2) else
+  sprintf("%.0f KB", bytes / 1024)
+}
+
+gb_bar <- function(frac, width = 30L) {
+  frac <- max(0, min(1, if (is.finite(frac)) frac else 0))
+  full <- as.integer(round(frac * width))
+  paste0("[", strrep("=", full), strrep("-", width - full), "]")
+}
+
+# The single line the console is watched for: how far along the whole build is,
+# and the clock time it is expected to finish at.
+gb_overall <- function(tag = "") {
+  if (GB_TOTAL_BYTES <= 0) return(invisible(NULL))
+  frac <- min(1, GB_BYTES_DONE / GB_TOTAL_BYTES)
+  el   <- as.numeric(difftime(Sys.time(), .t0, units = "secs"))
+  eta  <- if (frac > 0.001) el / frac - el else NA_real_
+  cat(format(Sys.time(), "%H:%M:%S"), "  ", gb_bar(frac), " ",
+      sprintf("%3.0f%%", 100 * frac),
+      "  step ", max(GB_STEP_NOW, 1), "/8",
+      "  read ", gb_size(GB_BYTES_DONE), " of ", gb_size(GB_TOTAL_BYTES),
+      "  elapsed ", gb_dur(el),
+      if (is.finite(eta) && frac < 0.999)
+        paste0("  REMAINING ~", gb_dur(eta),
+               "  finish ~", format(Sys.time() + eta, "%H:%M"))
+      else "",
+      if (nzchar(tag)) paste0("  ", tag) else "",
+      "\n", sep = "")
+  flush.console()
+}
+
+gb_step <- function(i, text) {
+  GB_STEP_NOW <<- i
+  cat("\n"); gb_say("[", i, "/8] ", text); gb_overall()
 }
 
 # En-dashed factor levels and concept names need a UTF-8 locale; without it they
@@ -200,7 +257,16 @@ gb_dir <- function(k) {
 }
 
 # All shards of one logical table, matched by a name fragment.
+# Listings are cached because the inventory below lists every shard set before
+# the first step runs, and each step then asks for its own again. On a network
+# filesystem that second listing is not free. Only SUCCESSFUL listings are
+# cached: a missing table must still raise, so that the tryCatch() around the
+# optional tables (procedures, BMI, ingredients) behaves exactly as before.
+.gb_shard_cache <- new.env(parent = emptyenv())
+
 gb_shards <- function(k, frag) {
+  key <- paste0(k, "|", frag)
+  if (!is.null(.gb_shard_cache[[key]])) return(.gb_shard_cache[[key]])
   gb_say("   listing '", frag, "' files in ", basename(gb_dir(k)), " ...")
   f <- list.files(gb_dir(k), pattern = "\\.csv(\\.gz)?$", full.names = TRUE,
                   recursive = TRUE)
@@ -214,6 +280,7 @@ gb_shards <- function(k, frag) {
             call. = FALSE)
     f <- f[seq_len(GB_MAX_SHARDS)]
   }
+  assign(key, f, envir = .gb_shard_cache)
   f
 }
 
@@ -292,6 +359,7 @@ gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
     acc     <- c(acc, part)
     done    <- done + length(idx)
     mb_done <- mb_done + sum(sz[idx]) / 1024^2
+    GB_BYTES_DONE <<- GB_BYTES_DONE + sum(sz[idx], na.rm = TRUE)
 
     el   <- as.numeric(difftime(Sys.time(), t_start, units = "secs"))
     rate <- if (el > 0) mb_done / el else NA_real_          # MB of input per second
@@ -302,6 +370,7 @@ gb_stream <- function(paths, cols, fn, label = "", collapse = NULL) {
            if (is.finite(eta) && done < n)
              paste0("  ETA ", gb_dur(eta), "  of ~", gb_dur(el + eta)) else
              paste0("  done in ", gb_dur(el)))
+    gb_overall()
     if (!is.null(collapse) && length(acc) > 1L) acc <- list(collapse(bind_rows(acc)))
     rm(part); invisible(gc(verbose = FALSE))
   }
@@ -331,9 +400,68 @@ gb_save <- function(obj, name) {
 }
 
 # ==============================================================================
+# INVENTORY -- measure everything before reading anything
+#
+# Listing costs seconds; reading costs tens of minutes. Doing all the listing
+# first buys a real denominator, so the percentage and the finish time below are
+# meaningful from the very first batch rather than converging late. Listings are
+# cached, so the steps below do not pay for them twice.
+#
+# Optional tables (procedures, BMI, ingredients) may legitimately be absent. A
+# miss here is recorded as "not present" and contributes nothing to the total;
+# the step that needs it still calls gb_shards() and still raises into its own
+# tryCatch(), exactly as before.
+# ==============================================================================
+gb_say("Inventory: measuring the input before reading it")
+
+GB_PLAN <- list(
+  list(step = 1, k = "demog",  frag = "sleepLevel",           what = "Sleep levels"),
+  list(step = 2, k = "demog",  frag = "stepsIntraday",        what = "Activity: steps"),
+  list(step = 2, k = "demog",  frag = "heartRateSummary",     what = "Activity: heart rate"),
+  list(step = 3, k = "ehr",    frag = "conditionOccurrence",  what = "Conditions"),
+  list(step = 4, k = "ehr",    frag = "procedureOccurrence",  what = "Procedures"),
+  list(step = 5, k = "demog",  frag = "data_person",          what = "Demographics"),
+  list(step = 5, k = "survey", frag = "data_bmi",             what = "BMI"),
+  list(step = 6, k = "survey", frag = "surveyOccurrence",     what = "Survey"),
+  list(step = 7, k = "ehr",    frag = "ingredientOccurrence", what = "Medications")
+)
+
+.inv <- lapply(GB_PLAN, function(p) {
+  fp <- tryCatch(gb_shards(p$k, p$frag), error = function(e) character(0))
+  b  <- if (length(fp)) sum(file.info(fp)$size, na.rm = TRUE) else 0
+  list(step = p$step, what = p$what, n = length(fp), bytes = b)
+})
+
+# The per-class medication folders are read by path, not through gb_shards.
+for (k in names(GB_MED_DIRS)) {
+  d <- GB_MED_DIRS[[k]]
+  if (is.na(d)) next
+  fp <- list.files(d, pattern = "\\.csv(\\.gz)?$", full.names = TRUE, recursive = TRUE)
+  .inv[[length(.inv) + 1L]] <- list(
+    step = 7, what = paste0("Med export: ", k), n = length(fp),
+    bytes = if (length(fp)) sum(file.info(fp)$size, na.rm = TRUE) else 0)
+}
+
+GB_TOTAL_BYTES <- sum(vapply(.inv, function(z) z$bytes, numeric(1)))
+.inv_n <- sum(vapply(.inv, function(z) z$n, integer(1)))
+
+cat("\n  step  what                       shards        size\n")
+cat("  ", strrep("-", 52), "\n", sep = "")
+for (z in .inv)
+  cat(sprintf("   [%d]  %-24s %7s  %10s\n", z$step, z$what,
+              if (z$n) format(z$n, big.mark = ",") else "none",
+              if (z$n) gb_size(z$bytes) else "-"))
+cat("  ", strrep("-", 52), "\n", sep = "")
+cat(sprintf("        %-24s %7s  %10s\n\n", "TOTAL TO READ",
+            format(.inv_n, big.mark = ","), gb_size(GB_TOTAL_BYTES)))
+if (GB_TOTAL_BYTES <= 0)
+  gb_say("   NOTE: nothing measurable to read -- the bar below will stay at 0%.")
+rm(.inv, .inv_n)
+
+# ==============================================================================
 # 1) SLEEP -- rebuilt from sleepLevel
 # ==============================================================================
-gb_say("[1/8] Sleep, from sleepLevel")
+gb_step(1, "Sleep, from sleepLevel")
 sl_paths <- gb_shards("demog", "sleepLevel")
 
 nightly <- gb_stream(
@@ -411,7 +539,7 @@ rm(nightly); invisible(gc(verbose = FALSE))
 # ==============================================================================
 # 2) ACTIVITY -- steps, wear time and heart-rate zones
 # ==============================================================================
-gb_say("[2/8] Activity")
+gb_step(2, "Activity")
 
 steps_daily <- gb_stream(gb_shards("demog", "stepsIntraday"),
   cols = c("person_id", "date", "sum_steps"), label = "steps",
@@ -493,7 +621,7 @@ rm(act_daily, steps_daily, hr_daily, valid_day); invisible(gc(verbose = FALSE))
 # ==============================================================================
 # 3) CONDITIONS -- outcomes, exclusions, comorbidities
 # ==============================================================================
-gb_say("[3/8] Conditions")
+gb_step(3, "Conditions")
 cond_paths <- gb_shards("ehr", "conditionOccurrence")
 want_cond  <- GERD_ALL_CONDITION_CONCEPTS
 
@@ -584,7 +712,7 @@ rm(cond); invisible(gc(verbose = FALSE))
 # ==============================================================================
 # 4) PROCEDURES
 # ==============================================================================
-gb_say("[4/8] Procedures")
+gb_step(4, "Procedures")
 proc <- tryCatch(gb_stream(gb_shards("ehr", "procedureOccurrence"),
   cols = c("person_id", "procedure_concept_id", "procedure_datetime",
            "standard_concept_name", "T_DISP_standard_concept_name"),
@@ -631,7 +759,7 @@ if (!is.null(proc) && nrow(proc)) {
 # ==============================================================================
 # 5) DEMOGRAPHICS + BMI
 # ==============================================================================
-gb_say("[5/8] Demographics and BMI")
+gb_step(5, "Demographics and BMI")
 per <- gb_stream(gb_shards("demog", "data_person"),
   cols = c("person_id","date_of_birth","T_DISP_gender","gender","T_DISP_race","race",
            "T_DISP_ethnicity","ethnicity","T_DISP_sex_at_birth","sex_at_birth"),
@@ -663,7 +791,7 @@ gb_save(left_join(first_act,   bmi_df, by = "person_id"), "R9_bmi_covariates_act
 # ==============================================================================
 # 6) SURVEY covariates
 # ==============================================================================
-gb_say("[6/8] Survey covariates")
+gb_step(6, "Survey covariates")
 svy <- gb_stream(gb_shards("survey", "surveyOccurrence"),
   cols = c("person_id", "question_concept_id", "answer_concept_id"),
   label = "survey", fn = function(d) d)
@@ -700,7 +828,7 @@ gb_save(alc, "alcohol_summary_df.rds")
 # ==============================================================================
 # 7) MEDICATIONS -- by RxNorm ingredient name
 # ==============================================================================
-gb_say("[7/8] Medications")
+gb_step(7, "Medications")
 MED_RX <- GERD_MED_RX   # from GERD Concepts R9.R
 drug <- tryCatch(gb_stream(gb_shards("ehr", "ingredientOccurrence"),
   cols = c("person_id", "standard_concept_name", "T_DISP_standard_concept_name"),
@@ -771,7 +899,7 @@ saveRDS(meds, file.path(GB_OUT, "R9_medication_flags.rds"))
 # ==============================================================================
 # 8) ELIGIBLE POPULATIONS
 # ==============================================================================
-gb_say("[8/8] Cohorts")
+gb_step(8, "Cohorts -- all files read; joining and writing (no bar movement left)")
 age_at <- function(dates_df, col) {
   demo %>% select(person_id, date_of_birth) %>%
     inner_join(dates_df, by = "person_id") %>%
@@ -845,8 +973,21 @@ cat("  combined (both)                    : ",
 cat("\n  This cohort is built ENTIRELY from the new export.\n")
 cat("  Nothing was read from rds_backup, so it shares no denominator with the\n")
 cat("  IBS paper.\n\n")
-cat("Run the analysis on it with:\n")
-cat('  GERD_DATA_DIR <- "', GB_OUT, '"\n', sep = "")
-cat('  source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")\n\n')
-cat("Elapsed: ", round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1),
-    " min\n", sep = "")
+.el_build <- as.numeric(difftime(Sys.time(), .t0, units = "secs"))
+GB_BYTES_DONE <- GB_TOTAL_BYTES        # step 8 reads nothing; close the bar out
+GB_STEP_NOW   <- 8
+gb_overall("BUILD COMPLETE")
+
+cat("\n=====================================================\n")
+cat("  STEP 1 OF 3 COMPLETE  --  build finished in ", gb_dur(.el_build), "\n", sep = "")
+cat("=====================================================\n\n")
+cat("  NOW RUN THIS (step 2 of 3 -- the main analysis):\n\n")
+cat('    GERD_DATA_DIR <- "', GB_OUT, '"\n', sep = "")
+cat('    source("~/workspace/gerd_code/RUN_GERD_ANALYSIS.R")\n\n')
+cat("  It prints its own bar and finish time. It runs three cohorts (sleep,\n")
+cat("  activity, combined) and is compute-bound rather than IO-bound, so it\n")
+cat("  does not scale with the size of the export.\n\n")
+cat("  THEN (step 3 of 3 -- the spline appendix):\n\n")
+cat('    source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")\n\n')
+cat("  Both steps read from the folder above. You can close this session\n")
+cat("  between steps; nothing is held in memory.\n\n")

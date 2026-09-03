@@ -158,14 +158,10 @@ for (.k in seq_along(.todo)) {
   .results[[nm]] <- tryCatch({
     source(file.path(GERD_CODE_DIR, .scripts[[nm]]), echo = FALSE); TRUE
   }, error = function(e) { message("\n*** ", nm, " FAILED: ", conditionMessage(e), "\n"); FALSE })
-  .el <- as.numeric(difftime(Sys.time(), .wall, units = "secs"))
-  .eta <- .el / .k * (length(.todo) - .k)
   cat("\n---", nm, if (isTRUE(.results[[nm]])) "COMPLETED" else "FAILED", "in",
       round(as.numeric(difftime(Sys.time(), .t0, units = "mins")), 1), "min ---\n")
-  cat(sprintf("=== STEP 2 PROGRESS: %d/%d cohorts | elapsed %s | %s ===\n",
-      .k, length(.todo), gerd_dur(.el),
-      if (.k < length(.todo)) paste0("ETA ", gerd_dur(.eta), ", total ~", gerd_dur(.el + .eta))
-      else paste0("all cohorts done in ", gerd_dur(.el))))
+  gerd_overall(.k, length(.todo), .wall, "cohorts",
+               if (.k == length(.todo)) "STEP 2 COMPLETE" else paste0("running: ", .todo[.k + 1]))
 }
 
 ## ---- Summary -----------------------------------------------------------------
@@ -186,4 +182,9 @@ if (dir.exists(.out)) {
 } else {
   cat("\nNo results folder was created -- see the messages above.\n")
 }
-cat("\nDone.\n")
+cat("\n=====================================================\n")
+cat("  STEP 2 OF 3 COMPLETE  --  ", gerd_dur(as.numeric(difftime(Sys.time(), .wall, units = "secs"))), "\n", sep = "")
+cat("=====================================================\n\n")
+cat("  NOW RUN THIS (step 3 of 3 -- the spline appendix):\n\n")
+cat('    source("~/workspace/gerd_code/RUN_GERD_SPLINE_ANALYSIS.R")\n\n')
+cat("  It reads the same folder and appends to the same manuscript_output.\n\n")
