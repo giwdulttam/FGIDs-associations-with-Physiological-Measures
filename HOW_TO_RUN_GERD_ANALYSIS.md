@@ -466,6 +466,44 @@ Report whichever you choose, and quote the ratio in the methods.
 
 ---
 
+# The valid-days gap between cases and non-cases
+
+Cases show far more valid days than non-cases (activity: 1,108 vs 240, a 4.6×
+ratio). Two separate questions, with different answers.
+
+**Is a different formula being used in the two groups? No.** Coverage is one
+`group_by(person_id) |> summarise(n())` over the pooled person-day table —
+[the build](GERD%20Build%20Cohort%20From%20Export.R:593) for activity and
+[:518](GERD%20Build%20Cohort%20From%20Export.R:518) for sleep. No outcome
+variable is in scope there; outcomes are attached later by
+`build_gerd_outcomes()`. The same expression produces every participant's
+count, so case status cannot enter it.
+
+**Does the case definition explain the size of the gap? No — and this corrects
+an earlier claim in this repo.** The post-Fitbit rule requires ≥2 codes and a
+first diagnosis ≥180 days after Fitbit *start*. That constrains the diagnosis
+date, **not** the length of the wear record, so a short record does not make a
+case impossible. Simulating GERD assigned independently of coverage and running
+it through the project's own `build_gerd_outcomes()`, the rule produces a ratio
+of only **~1.05×**, across every assumption about how coverage relates to
+Fitbit start date. It cannot manufacture 4.6×.
+
+So the gap is real, is not an arithmetic error, and is **not** fully accounted
+for by the timing rule. Run the diagnostic to localise it:
+
+```r
+GERD_DATA_DIR <- "~/workspace/gerd_build"
+source("~/workspace/gerd_code/GERD_DIAGNOSE_COVERAGE_GAP.R")
+```
+
+The decisive line is the `ever` vs `post_fitbit` comparison in section 2.
+`ever` has no timing rule at all, so if **both** rows show a large ratio the
+timing rule is irrelevant and the driver is the ≥2-codes requirement selecting
+participants with more EHR contact — who are also heavier device users. That is
+confounding to adjust for and report, not an artefact to explain away. Either
+way coverage is associated with both exposure and outcome, so set
+`GERD_ADJUST_COVERAGE <- TRUE` and report it as a sensitivity analysis.
+
 # If something goes wrong
 
 | Message | What to do |
