@@ -504,6 +504,40 @@ confounding to adjust for and report, not an artefact to explain away. Either
 way coverage is associated with both exposure and outcome, so set
 `GERD_ADJUST_COVERAGE <- TRUE` and report it as a sensitivity analysis.
 
+## Is a median of 1,108 valid days plausible?
+
+Code review clears the arithmetic. `n_valid_days = n()` counts rows of
+`valid_day`, which is keyed on `(person_id, date)` — both `steps_daily` and
+`hr_daily` are re-aggregated across shards on that key *before* the join
+([:551](GERD%20Build%20Cohort%20From%20Export.R:551),
+[:570](GERD%20Build%20Cohort%20From%20Export.R:570)), so one row is one day and
+shard overlap cannot double-count. The GERD rule is also **stricter** than the
+published IBS rule: IBS derives `n_valid_days` from the step filter alone and
+applies the 10-hour wear filter only to the activity-zone means, whereas GERD
+applies both. So this count should come out *smaller* than the IBS equivalent.
+
+The likely explanation is not a bug but a **missing time window**. There is no
+date restriction anywhere in the pipeline: `n_valid_days` and `avg_daily_steps`
+are computed over a participant's entire Fitbit history, which in All of Us can
+exceed five years. Studies reporting a few hundred days generally window the
+exposure. That makes the numbers non-comparable until they are put on the same
+footing — which is a real methodological decision to make before publishing,
+not a defect to fix.
+
+Two things code review can't settle. Check them on the data:
+
+```r
+GB_ROOT <- "~/workspace"
+source("~/workspace/gerd_code/GERD_CHECK_VALID_DAYS.R")
+```
+
+It reports whether the grouping key is genuinely a calendar day (`date` is used
+without `as.Date()` coercion, so a datetime column would silently split days),
+and whether any participant's day count exceeds the elapsed span of their own
+record — which would be arithmetically impossible without duplication. It then
+recomputes the counts under 365-day and 730-day windows so they can be compared
+with studies that window their exposure.
+
 # If something goes wrong
 
 | Message | What to do |
