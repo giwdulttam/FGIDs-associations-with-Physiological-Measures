@@ -2460,10 +2460,67 @@ antecedent published analysis treats this as first-order --- its file is named
 built and saved by the pipeline (\code{R9_avg_wear_hours_df.rds}); it is simply not used. Until it
 is, the activity estimates in Section~\ref{sec:activity-anomaly} confound activity with adherence.
 
+\paragraph{D4. \code{on_narcotic} is TRUE for 100\% of every cohort.}
+The opioid-analgesic covariate is positive for every participant in all six configurations
+(e.g.\ 13{,}215/13{,}215 and 725/725 in the sleep cohort). A constant carries no information, so
+the covariate adjusts for nothing. It is set from the per-class medication export
+(\code{GB_MED_DIRS[["on_narcotic"]]}) by \code{meds[[k]] <- meds\$person_id \%in\% ids}, so a
+Narcotics folder containing every participant rather than only those with an exposure would
+produce exactly this. The export contents should be checked before the flag is used or the
+expert-requested opioid adjustment is claimed.
+
+\paragraph{D5. \code{has_pud} is FALSE for 100\% of every cohort.}
+Peptic ulcer disease is absent from all 35{,}670 participants across the three cohorts. A
+population prevalence of exactly zero is not credible, so concept \code{4027663} is either wrong,
+or not being expanded to its descendants, or absent from this export. The covariate is therefore
+inert, and it is also one of the four terms in the comorbidity index (D6).
+
+\paragraph{D6. The comorbidity index cannot reach its top category.}
+\code{cci_score} is the sum of four binary flags (heart failure, COPD, diabetes, peptic ulcer), so
+its maximum possible value is 4 --- yet \code{cci_cat} defines a \code{"5+"} level, which is
+unreachable by construction. With \code{has_pud} always FALSE (D5) the effective maximum is 3.
+Observed data bear this out: the \code{"3-4"} and \code{"5+"} categories are $0\%$ in all six
+configurations. The report already flags this index as not a validated Charlson score; these two
+levels should simply be removed.
+
+\paragraph{D7. ``Maximum daily heart rate'' is the constant 220 for every participant.}
+\code{max_heart_rate} in \code{heartRateSummary} is the \emph{upper boundary of each heart-rate
+zone}, not an observed heart rate. Taking \code{max()} across a person's zones therefore returns
+the ceiling of the top zone --- 220 --- for everyone. The quartile-cutoff output confirms it: min,
+p25, median, p75 and max are all exactly 220.
+
+The damaging part is what happened next. \code{ntile()} on a constant breaks ties by row position,
+so four arbitrary ``quartiles'' were manufactured and modelled. Table~2 reports
+\emph{Maximum daily heart rate quartiles} with $p < 0.001$, and the multivariable table carries
+four rows of odds ratios and confidence intervals for it. None survives Bonferroni correction
+($p_{\text{adj}} = 1$ throughout), so the headline findings are not contaminated --- but a
+descriptive $p < 0.001$ for a variable with no variance would badly mislead a reader, and the
+exposure must be removed rather than reported as null. The spline pipeline already skips it.
+
+\paragraph{D8. ``Sedentary minutes'' is a wear-time measure, not a behaviour.}
+\code{avg_sedentary_min} is the mean of the Out-of-Range heart-rate zone. Its observed median is
+1{,}382 minutes per day --- 23 hours --- with a p75 of 1{,}418 and a maximum of exactly 1{,}440.
+A ``sedentary'' exposure that occupies essentially the entire day is measuring how long the device
+recorded a heart rate, not how much the participant sat. This is the same confound as D3 seen from
+the other side, and it explains the implausibly protective aOR of $0.23$ in
+Section~\ref{sec:activity-anomaly}: the highest ``sedentary'' quartile is largely the
+longest-wearing quartile. For scale, the active zones in the same export have medians of 46
+(lightly), 3.5 (fairly/very) and 52 (total) minutes per day.
+
 \paragraph{Recommended sequence before these results are circulated.}
-Fix D1 and D2 in the build, add wear time (and, per Section~\ref{sec:verify}, a coverage term) to
-the activity adjustment set, and re-run configurations 2, 3, 5 and 6. The sleep results
-(Configurations 1 and 4) are not affected by any of the three and can be read as they stand.
+Drop the \code{max_hr} exposure (D7) and the unreachable comorbidity levels (D6). Investigate the
+Narcotics export (D4) and concept \code{4027663} (D5); until both are resolved, state plainly that
+neither opioid use nor peptic ulcer disease is actually adjusted for, contrary to the protocol.
+Fix D1 and D2, replace or rename the sedentary exposure (D8), and add wear time --- and, per
+Section~\ref{sec:verify}, a coverage term --- to the activity adjustment set. Then re-run
+configurations 2, 3, 5 and 6.
+
+The sleep results (Configurations 1 and 4) are unaffected by D1, D2, D3, D7 and D8, which are
+activity-arm defects. They are touched by D4, D5 and D6 only in that three intended covariates
+turn out to be inert, so the sleep models are adjusted for less than the protocol states. Given
+the effect sizes involved --- restless minutes at aOR 3.41 --- that is unlikely to overturn the
+direction, but it must be disclosed rather than left implicit. The selection issue described under
+Table~1 applies to the sleep arm in full.
 
 %======================================================================
 \section{Results of the First Full Run}
@@ -2491,9 +2548,44 @@ Combined  & 13{,}878 & 718   & 162 & --- \\
 adjustment; the spline models use $n=12{,}143$.}
 \end{table}
 
-\noindent The cohorts are an order of magnitude larger than the $N=19{,}995$ IBS sleep cohort's
-case count would suggest, and share no denominator with it: they are built entirely from the new
-export.
+\noindent The cohorts share no denominator with the IBS paper: they are built entirely from the
+new export.
+
+\subsection{Cohort characteristics (Table 1) and a warning they carry}
+The baseline table is not neutral background here --- it contains the clearest evidence that the
+case group is selected rather than representative. In the sleep cohort, GERD cases are
+\emph{younger} (median 51 vs 56), more often female (74\% vs 68\%), higher-income (24\% vs 17\%
+above \$150k), and carry \emph{less} psychiatric and metabolic comorbidity than non-cases:
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Characteristic} & \textbf{No GERD ($n=13{,}215$)} & \textbf{GERD ($n=725$)} & \textbf{$p$} \\
+\midrule
+Age, median [IQR]      & 56 [41, 67]   & 51 [37, 62]  & $<0.001$ \\
+Female                 & 8{,}943 (68\%) & 534 (74\%)   & 0.003 \\
+Income $\geq$\$150k    & 2{,}052 (17\%) & 164 (24\%)   & $<0.001$ \\
+Depression             & 5{,}103 (39\%) & 224 (31\%)   & $<0.001$ \\
+Anxiety                & 5{,}144 (39\%) & 191 (26\%)   & $<0.001$ \\
+Diabetes               & 2{,}006 (15\%) & 77 (11\%)    & $<0.001$ \\
+Smoker                 & 5{,}338 (40\%) & 264 (36\%)   & 0.044 \\
+Obstructive sleep apnea& 2{,}542 (19\%) & 137 (19\%)   & 0.9 \\
+BMI, median [IQR]      & 29 [25, 35]   & 30 [26, 35]  & 0.072 \\
+\bottomrule
+\end{tabular}
+\caption{Selected baseline characteristics, sleep cohort. The comorbidity directions are the
+opposite of what the GERD literature would predict.}
+\end{table}
+
+\noindent GERD is consistently associated with \emph{more} depression, anxiety and metabolic
+disease in the literature; here every one of those runs backwards. Read alongside the coverage
+gap (cases contribute roughly twice the valid nights of non-cases) and the post-Fitbit case rule,
+the most economical explanation is that becoming a case in this design requires early Fitbit
+adoption and sustained wear, which selects a younger, wealthier, healthier and more engaged
+subgroup. This is a property of the case definition, not a discovery about GERD, and it applies
+to every configuration.
 
 \subsection{Sleep and GERD (Configuration 1)}
 Five of eight sleep exposures survived Bonferroni correction. The direction is consistent and
