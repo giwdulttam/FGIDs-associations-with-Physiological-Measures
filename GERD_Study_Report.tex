@@ -2527,154 +2527,863 @@ Table~1 applies to the sleep arm in full.
 \label{sec:results}
 %======================================================================
 This section reports the first execution of the complete pipeline against the real
-\textit{All of Us} export. All six configurations completed. Odds ratios are adjusted for the
-covariate set in Section~\ref{sec:covstrategy} and $p$-values are Bonferroni-corrected within
-configuration; Q1 is the reference throughout.
+\textit{All of Us} export, and covers every file it produced: 100 CSV tables and 68 PNG figures
+across the two result folders. Odds ratios are adjusted for the covariate set of
+Section~\ref{sec:covstrategy}; $p$-values are Bonferroni-corrected within configuration; Q1 is the
+reference throughout. Every number below is reproduced mechanically from the output files.
+Defects uncovered by this run are catalogued in Section~\ref{sec:defects-run} and referenced from
+the affected results.
 
-\subsection{Cohorts realised}
+\subsection{What the run produced}
 \begin{table}[h]
 \centering
 \footnotesize
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}llrl@{}}
 \toprule
-\textbf{Cohort} & \textbf{Total} & \textbf{GERD} & \textbf{Oesophagitis} & \textbf{Modelled $n$} \\
+\textbf{Family} & \textbf{Content} & \textbf{$n$} & \textbf{Reported in} \\
 \midrule
-Sleep     & 13{,}940 & 725   & 164 & 12{,}391 \\
-Activity  & 21{,}730 & 1{,}023 & 244 & --- \\
-Combined  & 13{,}878 & 718   & 162 & --- \\
+\code{table1}                    & baseline characteristics     & 6  & Table~\ref{tab:res-t1} \\
+\code{table2}                    & exposure descriptives        & 6  & \S\ref{sec:res-dist} \\
+\code{quartile_cutoffs}          & exposure distributions       & 6  & Table~\ref{tab:res-cut} \\
+\code{supp_table1_univariate}    & unadjusted ORs               & 6  & Tables~\ref{tab:res-sleep-gerd}--\ref{tab:res-comb-eso} \\
+\code{supp_table2_multivariable} & adjusted ORs                 & 6  & Tables~\ref{tab:res-sleep-gerd}--\ref{tab:res-comb-eso} \\
+\code{mutually_adjusted_pairs}   & sleep$\times$activity models & 2  & Tables~\ref{tab:res-mut-gerd}--\ref{tab:res-mut-eso} \\
+\code{diagnostics}               & GVIF, Cook's D, Box--Tidwell & 6  & Table~\ref{tab:res-diag} \\
+\code{spline_summary}            & RCS fits                     & 3  & Table~\ref{tab:res-spline} \\
+\code{quartile_vs_spline}        & head-to-head comparison      & 3  & Tables~\ref{tab:res-qvs}--\ref{tab:res-aic} \\
+\code{*_curve.csv}               & fitted spline curves         & 56 & \S\ref{sec:res-curves} \\
+figures (forest, GVIF, spline)   & PNG                          & 68 & \S\ref{sec:res-figs} \\
 \bottomrule
 \end{tabular}
-\caption{Realised cohort sizes. ``Modelled $n$'' is the complete-case count after covariate
-adjustment; the spline models use $n=12{,}143$.}
+\caption{Complete inventory of the run's output and where each family is reported.}
 \end{table}
 
-\noindent The cohorts share no denominator with the IBS paper: they are built entirely from the
-new export.
-
-\subsection{Cohort characteristics (Table 1) and a warning they carry}
-The baseline table is not neutral background here --- it contains the clearest evidence that the
-case group is selected rather than representative. In the sleep cohort, GERD cases are
-\emph{younger} (median 51 vs 56), more often female (74\% vs 68\%), higher-income (24\% vs 17\%
-above \$150k), and carry \emph{less} psychiatric and metabolic comorbidity than non-cases:
-
+\subsection{Cohorts and analytic attrition}
 \begin{table}[h]
 \centering
 \footnotesize
-\begin{tabular}{@{}lccc@{}}
+\begin{tabular}{@{}lrrrrr@{}}
 \toprule
-\textbf{Characteristic} & \textbf{No GERD ($n=13{,}215$)} & \textbf{GERD ($n=725$)} & \textbf{$p$} \\
+\textbf{Cohort} & \textbf{Total} & \textbf{GERD} & \textbf{Oesophagitis} & \textbf{Adjusted $n$} & \textbf{Lost} \\
 \midrule
-Age, median [IQR]      & 56 [41, 67]   & 51 [37, 62]  & $<0.001$ \\
-Female                 & 8{,}943 (68\%) & 534 (74\%)   & 0.003 \\
-Income $\geq$\$150k    & 2{,}052 (17\%) & 164 (24\%)   & $<0.001$ \\
-Depression             & 5{,}103 (39\%) & 224 (31\%)   & $<0.001$ \\
-Anxiety                & 5{,}144 (39\%) & 191 (26\%)   & $<0.001$ \\
-Diabetes               & 2{,}006 (15\%) & 77 (11\%)    & $<0.001$ \\
-Smoker                 & 5{,}338 (40\%) & 264 (36\%)   & 0.044 \\
-Obstructive sleep apnea& 2{,}542 (19\%) & 137 (19\%)   & 0.9 \\
-BMI, median [IQR]      & 29 [25, 35]   & 30 [26, 35]  & 0.072 \\
+Sleep    & 13{,}940 & 725     & 164 & 12{,}391 & 1{,}549 (11.1\%) \\
+Activity & 21{,}730 & 1{,}023 & 244 & 19{,}228 & 2{,}502 (11.5\%) \\
+Combined & 13{,}878 & 718     & 164 & 12{,}341 & 1{,}537 (11.1\%) \\
 \bottomrule
 \end{tabular}
-\caption{Selected baseline characteristics, sleep cohort. The comorbidity directions are the
-opposite of what the GERD literature would predict.}
+\caption{Realised cohorts. Unadjusted models use the full column; adjusted models are
+complete-case. Spline models use $n=12{,}143$ in the sleep cohort.}
 \end{table}
 
-\noindent GERD is consistently associated with \emph{more} depression, anxiety and metabolic
-disease in the literature; here every one of those runs backwards. Read alongside the coverage
-gap (cases contribute roughly twice the valid nights of non-cases) and the post-Fitbit case rule,
-the most economical explanation is that becoming a case in this design requires early Fitbit
-adoption and sustained wear, which selects a younger, wealthier, healthier and more engaged
-subgroup. This is a property of the case definition, not a discovery about GERD, and it applies
-to every configuration.
+\noindent GERD prevalence is $5.2\%$ in the sleep cohort and $4.7\%$ in the activity cohort;
+oesophagitis is $1.2\%$ and $1.1\%$. Complete-case attrition is close to $11\%$ in every cohort.
+The cohorts share no denominator with the IBS paper: they are built entirely from the new export.
 
-\subsection{Sleep and GERD (Configuration 1)}
-Five of eight sleep exposures survived Bonferroni correction. The direction is consistent and
-dose-responsive across quartiles:
+\subsection{Cohort characteristics, and the warning they carry}
+\label{sec:res-t1s}
+The baseline table is not neutral background here --- it is the clearest evidence that the case
+group is selected rather than representative. GERD cases are younger (median 51 vs 56), more often
+female, higher-income, less likely to smoke, and carry \emph{less} depression, anxiety and diabetes
+than non-cases. Every one of those runs opposite to the direction the GERD literature would
+predict.
 
-\begin{table}[h]
-\centering
-\footnotesize
-\begin{tabular}{@{}lccc@{}}
-\toprule
-\textbf{Exposure (Q4 vs Q1)} & \textbf{aOR} & \textbf{95\% CI} & \textbf{$p_{\text{adj}}$} \\
-\midrule
-Minutes restless      & 3.41 & 2.66--4.43 & $1.1\times10^{-19}$ \\
-Minutes awake         & 0.53 & 0.41--0.67 & $6.5\times10^{-6}$ \\
-Minutes deep sleep    & 0.50 & 0.40--0.63 & $8.9\times10^{-8}$ \\
-Minutes REM           & 0.48 & 0.38--0.61 & $1.6\times10^{-8}$ \\
-Minutes light sleep   & 0.39 & 0.31--0.50 & $1.6\times10^{-12}$ \\
-\midrule
-Minutes asleep        & 0.91 & 0.71--1.15 & $1.00$ \\
-Minutes in bed        & 0.99 & 0.78--1.24 & $1.00$ \\
-Sleep efficiency      & 0.96 & 0.76--1.23 & $1.00$ \\
-\bottomrule
-\end{tabular}
-\caption{Sleep exposures and GERD, highest versus lowest quartile.}
+Read alongside the coverage gap --- cases contribute 1{,}166 [556, 1{,}920] valid nights against
+569 [363, 1{,}223] for non-cases --- and the post-Fitbit case rule, the most economical explanation
+is that becoming a case in this design requires early Fitbit adoption and sustained wear, which
+selects a younger, wealthier, healthier and more engaged subgroup. This is a property of the case
+definition, not a discovery about GERD, and it applies to all six configurations. Obstructive sleep
+apnoea, the covariate the GERD expert specifically requested, is identically distributed between
+the groups ($19\%$ vs $19\%$, $p=0.9$), so it is not driving the sleep findings.
+
+Two rows of Table~\ref{tab:res-t1} are degenerate and are discussed as defects D4 and D5: every
+participant is flagged as taking an opioid analgesic, and no participant has peptic ulcer disease.
+
+
+\begin{longtable}{@{}p{6.0cm}rrr@{}}
+\caption{Baseline characteristics, sleep cohort, by GERD status. Reproduced in full from \code{sleep\_gerd\_any\_table1.csv}.}\label{tab:res-t1}\\
+\toprule \textbf{Characteristic} & \textbf{No GERD} & \textbf{GERD} & \textbf{$p$} \\
+ & $n=13{,}215$ & $n=725$ & \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No GERD} & \textbf{GERD} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 56 [41, 67] & 51 [37, 62] & <0.001 \\
+\textbf{Age group} &  &  & <0.001 \\
+\quad <30 & 1,099 (8.3\%) & 92 (13\%) &  \\
+\quad 30-44 & 2,881 (22\%) & 178 (25\%) &  \\
+\quad 45-64 & 5,073 (38\%) & 323 (45\%) &  \\
+\quad 65+ & 4,162 (31\%) & 132 (18\%) &  \\
+\textbf{BMI (kg/m2)} & 29 [25, 35] & 30 [26, 35] & 0.072 \\
+\textbf{Sex at birth} &  &  & 0.003 \\
+\quad Female & 8,943 (68\%) & 534 (74\%) &  \\
+\quad Male & 4,224 (32\%) & 190 (26\%) &  \\
+\quad Other or Missing & 48 (0.4\%) & 1 (0.1\%) &  \\
+\textbf{Race} &  &  & <0.001 \\
+\quad White & 10,407 (79\%) & 583 (80\%) &  \\
+\quad Black & 713 (5.4\%) & 57 (7.9\%) &  \\
+\quad Asian & 333 (2.5\%) & 17 (2.3\%) &  \\
+\quad Other or Multiracial & 1,215 (9.2\%) & 38 (5.2\%) &  \\
+\quad Missing/Unknown & 547 (4.1\%) & 30 (4.1\%) &  \\
+\textbf{Ethnicity} &  &  & 0.3 \\
+\quad Non-Hispanic & 11,981 (91\%) & 663 (91\%) &  \\
+\quad Hispanic & 962 (7.3\%) & 53 (7.3\%) &  \\
+\quad Unknown/Missing & 272 (2.1\%) & 9 (1.2\%) &  \\
+\textbf{Education} &  &  & 0.12 \\
+\quad High school or less & 1,080 (8.2\%) & 44 (6.1\%) &  \\
+\quad Some college & 3,651 (28\%) & 198 (28\%) &  \\
+\quad College or higher & 8,394 (64\%) & 474 (66\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & <0.001 \\
+\quad Less than \$50k & 3,970 (32\%) & 168 (25\%) &  \\
+\quad \$50k to \$150k & 6,413 (52\%) & 344 (51\%) &  \\
+\quad \$150k or more & 2,052 (17\%) & 164 (24\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & 0.052 \\
+\quad 0 drinks per day & 2,162 (16\%) & 105 (14\%) &  \\
+\quad 1-2 drinks per day & 8,697 (66\%) & 510 (70\%) &  \\
+\quad 3-4 drinks per day & 1,373 (10\%) & 61 (8.4\%) &  \\
+\quad >=5 drinks per day & 338 (2.6\%) & 11 (1.5\%) &  \\
+\quad Unknown/Missing & 645 (4.9\%) & 38 (5.2\%) &  \\
+\textbf{Smoking status} &  &  & 0.044 \\
+\quad Non-smoker & 7,581 (57\%) & 449 (62\%) &  \\
+\quad Smoker & 5,338 (40\%) & 264 (36\%) &  \\
+\quad Unknown/Missing & 296 (2.2\%) & 12 (1.7\%) &  \\
+\textbf{Obstructive sleep apnea} & 2,542 (19\%) & 137 (19\%) & 0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 2,086 (16\%) & 109 (15\%) & 0.6 \\
+\textbf{Opioid analgesic} & 13,215 (100\%) & 725 (100\%) &  \\
+\textbf{Depression} & 5,103 (39\%) & 224 (31\%) & <0.001 \\
+\textbf{Anxiety} & 5,144 (39\%) & 191 (26\%) & <0.001 \\
+\textbf{Diabetes} & 2,006 (15\%) & 77 (11\%) & <0.001 \\
+\textbf{Hypertension} & 3,165 (24\%) & 197 (27\%) & 0.054 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & <0.001 \\
+\quad 0 & 10,382 (79\%) & 622 (86\%) &  \\
+\quad 1-2 & 2,833 (21\%) & 103 (14\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}
+
+\subsection{Univariate associations of the covariates}
+\label{sec:res-cov}
+The \code{supp_table1_univariate.csv} files report crude odds ratios for every covariate as well as
+every exposure. These rows are worth reading in full, because they quantify the selection pattern
+described in Section~\ref{sec:res-t1s} rather than merely asserting it. In the sleep cohort:
+participants aged 65 and over have $0.38$ times the odds of being a GERD case as those under 30
+($0.29$--$0.50$); those earning \$150k or more have $1.89$ times the odds of the lowest income band
+($1.51$--$2.36$); and depression ($0.71$), anxiety ($0.56$) and the comorbidity index ($0.61$ for
+1--2 conditions) are all \emph{protective}.
+
+No plausible biology makes affluence a risk factor for reflux and anxiety a protective one. These
+are the fingerprints of a case definition that requires early device adoption and sustained wear.
+The same pattern holds in the activity and combined cohorts.
+
+\footnotesize\begin{longtable}{@{}p{3.4cm}p{2.6cm}p{2.3cm}p{2.3cm}p{2.3cm}@{}}
+\caption{Univariate (unadjusted) odds ratios for every covariate, GERD outcome, from the three \code{supp\_table1\_univariate.csv} files. These are the crude associations of the adjustment set with the outcome.}\label{tab:res-cov-gerd}\\
+\toprule \textbf{Covariate} & \textbf{Level} & \textbf{Sleep} & \textbf{Activity} & \textbf{Combined} \\ \midrule \endfirsthead
+\toprule \textbf{Covariate} & \textbf{Level} & \textbf{Sleep} & \textbf{Activity} & \textbf{Combined} \\ \midrule \endhead
+Age &  & 0.98 (0.98-0.99) & 0.98 (0.98-0.99) & 0.98 (0.98-0.99) \\
+Age group & 30-44 & 0.74 (0.57-0.96) & 0.75 (0.61-0.93) & 0.72 (0.56-0.95) \\
+ & 45-64 & 0.76 (0.60-0.97) & 0.75 (0.61-0.92) & 0.75 (0.60-0.97) \\
+ & 65+ & 0.38 (0.29-0.50) & 0.39 (0.31-0.50) & 0.37 (0.28-0.49) \\
+BMI (kg/m2) &  & 1.01 (1.00-1.02) & 1.00 (1.00-1.01) & 1.01 (1.00-1.02) \\
+Sex at birth & Male & 0.75 (0.63-0.89) & 0.70 (0.61-0.81) & 0.76 (0.64-0.90) \\
+ & Other or Missing & 0.35 (0.02-1.60) & 0.42 (0.07-1.33) & 0.37 (0.02-1.68) \\
+Race & Black & 1.43 (1.07-1.88) & 1.01 (0.79-1.27) & 1.45 (1.08-1.91) \\
+ & Asian & 0.91 (0.54-1.45) & 0.84 (0.54-1.24) & 0.92 (0.54-1.47) \\
+ & Other or Multiracial & 0.56 (0.39-0.77) & 0.63 (0.49-0.80) & 0.57 (0.40-0.78) \\
+ & Missing/Unknown & 0.98 (0.66-1.40) & 0.71 (0.51-0.96) & 0.99 (0.67-1.42) \\
+Ethnicity & Hispanic & 1.00 (0.74-1.31) & 0.81 (0.64-1.02) & 1.01 (0.75-1.33) \\
+ & Unknown/Missing & 0.60 (0.28-1.10) & 0.55 (0.30-0.92) & 0.61 (0.29-1.11) \\
+Education & Some college & 1.33 (0.96-1.88) & 1.23 (0.95-1.62) & 1.31 (0.94-1.84) \\
+ & College or higher & 1.39 (1.02-1.93) & 1.62 (1.27-2.09) & 1.37 (1.01-1.91) \\
+Income & \$50k to \$150k & 1.27 (1.05-1.53) & 1.42 (1.22-1.66) & 1.27 (1.05-1.54) \\
+ & \$150k or more & 1.89 (1.51-2.36) & 2.25 (1.87-2.70) & 1.91 (1.53-2.38) \\
+Alcohol use (Likert) &  & 0.92 (0.82-1.04) & 0.97 (0.88-1.06) & 0.92 (0.82-1.04) \\
+Smoking status & Smoker & 0.84 (0.71-0.98) & 0.71 (0.62-0.81) & 0.83 (0.71-0.97) \\
+ & Unknown/Missing & 0.68 (0.36-1.17) & 0.79 (0.48-1.22) & 0.69 (0.36-1.18) \\
+Comorbidity index (partial) & 1-2 & 0.61 (0.49-0.75) & 0.61 (0.51-0.72) & 0.61 (0.49-0.75) \\
+Depression &  & 0.71 (0.60-0.83) & 0.68 (0.59-0.77) & 0.71 (0.60-0.83) \\
+Anxiety &  & 0.56 (0.47-0.66) & 0.57 (0.50-0.66) & 0.56 (0.47-0.67) \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{3.4cm}p{2.6cm}p{2.3cm}p{2.3cm}p{2.3cm}@{}}
+\caption{Univariate (unadjusted) odds ratios for every covariate, oesophagitis outcome, from the three \code{supp\_table1\_univariate.csv} files. These are the crude associations of the adjustment set with the outcome.}\label{tab:res-cov-eso}\\
+\toprule \textbf{Covariate} & \textbf{Level} & \textbf{Sleep} & \textbf{Activity} & \textbf{Combined} \\ \midrule \endfirsthead
+\toprule \textbf{Covariate} & \textbf{Level} & \textbf{Sleep} & \textbf{Activity} & \textbf{Combined} \\ \midrule \endhead
+Age &  & 1.01 (1.00-1.02) & 1.00 (1.00-1.01) & 1.01 (1.00-1.02) \\
+Age group & 30-44 & 1.26 (0.62-2.83) & 1.25 (0.71-2.30) & 1.26 (0.62-2.83) \\
+ & 45-64 & 1.75 (0.92-3.77) & 1.65 (0.99-2.95) & 1.75 (0.92-3.77) \\
+ & 65+ & 1.70 (0.88-3.70) & 1.44 (0.85-2.61) & 1.70 (0.88-3.70) \\
+BMI (kg/m2) &  & 1.01 (0.99-1.03) & 1.00 (0.99-1.02) & 1.01 (0.99-1.03) \\
+Sex at birth & Male & 1.18 (0.85-1.62) & 0.89 (0.67-1.16) & 1.17 (0.85-1.61) \\
+ & Other or Missing & 0.00 (0.00-8.63) & 0.96 (0.05-4.37) & 0.00 (0.00-14.40) \\
+Race & Black & 0.51 (0.18-1.12) & 0.66 (0.36-1.11) & 0.51 (0.18-1.12) \\
+ & Asian & 0.22 (0.01-0.99) & 0.42 (0.10-1.11) & 0.22 (0.01-1.00) \\
+ & Other or Multiracial & 0.81 (0.44-1.38) & 0.62 (0.36-0.98) & 0.81 (0.44-1.38) \\
+ & Missing/Unknown & 0.68 (0.24-1.49) & 0.69 (0.34-1.23) & 0.68 (0.24-1.50) \\
+Ethnicity & Hispanic & 0.75 (0.35-1.38) & 0.66 (0.37-1.08) & 0.74 (0.35-1.38) \\
+ & Unknown/Missing & 1.51 (0.53-3.34) & 1.28 (0.54-2.53) & 1.51 (0.53-3.35) \\
+Education & Some college & 1.17 (0.59-2.59) & 1.16 (0.70-2.01) & 1.17 (0.59-2.58) \\
+ & College or higher & 1.66 (0.89-3.52) & 1.51 (0.95-2.55) & 1.65 (0.89-3.52) \\
+Income & \$50k to \$150k & 1.40 (0.95-2.08) & 1.41 (1.04-1.92) & 1.40 (0.95-2.08) \\
+ & \$150k or more & 1.62 (1.00-2.61) & 1.77 (1.20-2.59) & 1.63 (1.01-2.62) \\
+Alcohol use (Likert) &  & 1.02 (0.80-1.27) & 0.96 (0.79-1.15) & 1.02 (0.80-1.27) \\
+Smoking status & Smoker & 0.96 (0.69-1.31) & 0.93 (0.71-1.20) & 0.95 (0.69-1.31) \\
+ & Unknown/Missing & 1.09 (0.33-2.62) & 0.97 (0.34-2.14) & 1.09 (0.33-2.61) \\
+Comorbidity index (partial) & 1-2 & 0.70 (0.45-1.05) & 0.83 (0.60-1.13) & 0.70 (0.45-1.05) \\
+Depression &  & 0.79 (0.57-1.09) & 0.82 (0.63-1.06) & 0.79 (0.57-1.09) \\
+Anxiety &  & 0.86 (0.62-1.18) & 1.04 (0.81-1.35) & 0.86 (0.62-1.18) \\
+\bottomrule \end{longtable}\normalsize
+
+\subsection{Exposure distributions and quartile boundaries}
+\label{sec:res-dist}
+The \code{table2} files give exposure medians by case status --- reproduced in full for all six
+configurations in Appendix~\ref{sec:appM} --- and the \code{quartile_cutoffs} files
+give the boundaries used to form quartiles. Three of the seven activity exposures are visibly
+compromised from their distributions alone, before any model is fitted.
+
+
+\begin{table}[h]\centering\footnotesize
+\begin{tabular}{@{}llrrrrr@{}}\toprule
+\textbf{Exposure} & \textbf{Unit} & \textbf{Min} & \textbf{P25} & \textbf{Median} & \textbf{P75} & \textbf{Max} \\ \midrule
+\multicolumn{7}{@{}l@{}}{\itshape Sleep cohort} \\
+\code{avg\_min\_asleep} & minutes & 275.5 &   376 & 411.2 & 444.7 &   851 \\
+\code{avg\_min\_in\_bed} & minutes & 303.7 & 414.3 & 452.1 & 487.5 &   930 \\
+\code{avg\_min\_awake} & minutes & 0.6305 & 28.63 & 35.31 & 42.34 & 104.7 \\
+\code{avg\_min\_restless} & minutes & 0 & 0.4017 & 1.429 &  5.71 & 215.3 \\
+\code{avg\_min\_deep} & minutes & 0 & 39.02 & 50.94 & 62.72 & 122.4 \\
+\code{avg\_min\_light} & minutes & 0 & 203.1 & 244.8 &   280 & 544.5 \\
+\code{avg\_min\_rem} & minutes & 0 & 53.83 & 70.55 & 86.06 & 174.2 \\
+\code{avg\_sleep\_efficiency} & \% & 58.45 & 89.94 & 91.32 & 92.52 & 99.76 \\
+\multicolumn{7}{@{}l@{}}{\itshape Activity cohort} \\
+\code{avg\_daily\_steps} & steps & 185.1 & 4,027 & 5,987 & 8,210 & 29,472 \\
+\code{avg\_lightly\_active\_min} & minutes & 0 &  19.3 & 46.25 &   136 & 1,290 \\
+\code{avg\_fairly\_active\_min} & minutes & 0 & 1.195 & 3.529 & 9.888 & 538.9 \\
+\code{avg\_very\_active\_min} & minutes & 0 & 1.195 & 3.529 & 9.888 & 538.9 \\
+\code{avg\_total\_active\_min} & minutes & 0 & 21.48 & 52.25 & 148.6 & 1,363 \\
+\code{avg\_sedentary\_min} & minutes & 0 & 1,201 & 1,382 & 1,418 & 1,440 \\
+\code{avg\_daily\_max\_hr\_minute\_all\_days} & bpm &   220 &   220 &   220 &   220 &   220 \\
+\bottomrule\end{tabular}
+\caption{Exposure distributions and quartile boundaries. \code{avg\_very\_active\_min} is identical to \code{avg\_fairly\_active\_min} (D1); \code{avg\_sedentary\_min} has a median of 23 hours (D8); \code{avg\_daily\_max\_hr\_minute\_all\_days} is constant (D7).}\label{tab:res-cut}
 \end{table}
 
-\noindent Restless minutes carry the strongest association in the entire study. Total sleep
-duration, time in bed and sleep efficiency show no association at all --- the signal is in sleep
-\emph{architecture and fragmentation}, not sleep \emph{quantity}. That is a substantive finding
-and it is consistent across the sleep and combined cohorts.
+\subsection{Sleep exposures and GERD (Configuration 1)}
+\label{sec:res-sleep}
+Five of the eight sleep exposures survive Bonferroni correction, and the pattern is the study's
+central finding: the signal lies in sleep \emph{architecture and fragmentation}, not sleep
+\emph{quantity}. Minutes asleep, minutes in bed and sleep efficiency are flatly null across all
+four quartiles, while restless minutes and all three sleep stages are strongly and monotonically
+associated. Unadjusted and adjusted estimates are close throughout --- the measured demographic,
+behavioural and comorbid covariates explain little of the association.
 
-\subsection{Oesophagitis (Configurations 4--6)}
-With 164 sleep and 244 activity cases the same directions persist with wider intervals: restless
-Q4 aOR $2.73$ ($1.72$--$4.46$), light sleep Q4 $0.41$ ($0.26$--$0.65$), REM Q4 $0.41$
-($0.25$--$0.64$). The stricter phenotype therefore does not contradict the broad one. Events per
-variable fall to $\approx 5.5$--$6.1$ in the spline models, which the pipeline flags as
-\code{UNSTABLE}; those rows should be read as directional, not precise.
 
-\subsection{Activity (Configurations 2, 3, 5, 6) --- direction contrary to hypothesis}
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Sleep exposures and GERD (Configuration 1). Unadjusted $n=13{,}940$; adjusted $n=12{,}391$. Bold marks $p_{\text{adj}}<0.05$.}\label{tab:res-sleep-gerd}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Minutes asleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.88 (0.71-1.09) & 0.88 (0.70-1.11) & 1.000 \\
+ & Q3 & 1.09 (0.89-1.34) & 1.06 (0.85-1.33) & 1.000 \\
+ & Q4 & 0.92 (0.74-1.14) & 0.91 (0.71-1.15) & 1.000 \\
+\addlinespace
+Minutes in bed quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.89 (0.72-1.10) & 0.84 (0.66-1.06) & 1.000 \\
+ & Q3 & 1.04 (0.85-1.28) & 1.00 (0.80-1.26) & 1.000 \\
+ & Q4 & 0.97 (0.78-1.19) & 0.99 (0.78-1.24) & 1.000 \\
+\addlinespace
+Minutes awake quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.64 (0.53-0.78) & \textbf{0.70 (0.57-0.87)} & 0.023 \\
+ & Q3 & 0.52 (0.43-0.64) & \textbf{0.61 (0.48-0.76)} & $2.7\times10^{-4}$ \\
+ & Q4 & 0.44 (0.36-0.55) & \textbf{0.53 (0.41-0.67)} & $6.5\times10^{-6}$ \\
+\addlinespace
+Minutes restless quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.31 (0.99-1.74) & 1.26 (0.94-1.70) & 1.000 \\
+ & Q3 & 2.25 (1.75-2.92) & \textbf{2.13 (1.63-2.81)} & $9.1\times10^{-7}$ \\
+ & Q4 & 3.94 (3.11-5.03) & \textbf{3.41 (2.66-4.43)} & $1.1\times10^{-19}$ \\
+\addlinespace
+Minutes in deep sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.64 (0.52-0.78) & \textbf{0.67 (0.54-0.83)} & 0.007 \\
+ & Q3 & 0.55 (0.44-0.67) & \textbf{0.52 (0.41-0.65)} & $2.9\times10^{-7}$ \\
+ & Q4 & 0.58 (0.48-0.72) & \textbf{0.50 (0.40-0.63)} & $8.9\times10^{-8}$ \\
+\addlinespace
+Minutes in light sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.50 (0.41-0.60) & \textbf{0.55 (0.44-0.67)} & $1.9\times10^{-7}$ \\
+ & Q3 & 0.36 (0.29-0.45) & \textbf{0.38 (0.30-0.48)} & $1.2\times10^{-14}$ \\
+ & Q4 & 0.33 (0.26-0.41) & \textbf{0.39 (0.31-0.50)} & $1.6\times10^{-12}$ \\
+\addlinespace
+Minutes in REM quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.65 (0.53-0.79) & \textbf{0.70 (0.57-0.87)} & 0.026 \\
+ & Q3 & 0.58 (0.47-0.71) & \textbf{0.57 (0.46-0.71)} & $2.0\times10^{-5}$ \\
+ & Q4 & 0.54 (0.43-0.66) & \textbf{0.48 (0.38-0.61)} & $1.6\times10^{-8}$ \\
+\addlinespace
+Sleep efficiency quartiles (\%) & Q1 & reference & reference & \\
+ & Q2 & 1.15 (0.93-1.42) & 1.17 (0.93-1.48) & 1.000 \\
+ & Q3 & 1.11 (0.89-1.38) & 1.05 (0.83-1.33) & 1.000 \\
+ & Q4 & 1.16 (0.94-1.44) & 0.96 (0.76-1.23) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
+
+\subsection{Sleep exposures and oesophagitis (Configuration 4)}
+With 164 cases the same directions hold with wider intervals, and minutes asleep, minutes in
+bed and sleep efficiency remain null. The stricter phenotype corroborates rather than
+contradicts the broad one, which is the most reassuring internal check the study contains:
+oesophagitis is endoscopically verified and far less susceptible to coding noise than a GERD
+symptom code.
+
+
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Sleep exposures and oesophagitis (Configuration 4). 164 cases.}\label{tab:res-sleep-eso}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Minutes asleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.90 (0.58-1.41) & 0.87 (0.54-1.38) & 1.000 \\
+ & Q3 & 1.10 (0.72-1.68) & 1.07 (0.69-1.68) & 1.000 \\
+ & Q4 & 0.90 (0.58-1.41) & 0.85 (0.53-1.36) & 1.000 \\
+\addlinespace
+Minutes in bed quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.78 (0.49-1.21) & 0.68 (0.42-1.08) & 1.000 \\
+ & Q3 & 0.89 (0.58-1.36) & 0.85 (0.54-1.32) & 1.000 \\
+ & Q4 & 0.98 (0.64-1.49) & 0.87 (0.55-1.36) & 1.000 \\
+\addlinespace
+Minutes awake quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.59 (0.39-0.89) & 0.57 (0.37-0.87) & 0.250 \\
+ & Q3 & 0.43 (0.27-0.67) & \textbf{0.37 (0.22-0.61)} & 0.003 \\
+ & Q4 & 0.61 (0.40-0.91) & 0.52 (0.33-0.82) & 0.119 \\
+\addlinespace
+Minutes restless quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.39 (0.84-2.33) & 1.37 (0.81-2.33) & 1.000 \\
+ & Q3 & 1.16 (0.68-1.97) & 1.09 (0.62-1.91) & 1.000 \\
+ & Q4 & 2.81 (1.81-4.48) & \textbf{2.73 (1.72-4.46)} & $8.1\times10^{-4}$ \\
+\addlinespace
+Minutes in deep sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.49 (0.32-0.73) & \textbf{0.45 (0.29-0.70)} & 0.011 \\
+ & Q3 & 0.49 (0.32-0.73) & \textbf{0.49 (0.32-0.76)} & 0.034 \\
+ & Q4 & 0.39 (0.24-0.60) & \textbf{0.39 (0.24-0.63)} & 0.004 \\
+\addlinespace
+Minutes in light sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.40 (0.26-0.62) & \textbf{0.39 (0.24-0.62)} & 0.002 \\
+ & Q3 & 0.45 (0.29-0.67) & \textbf{0.44 (0.28-0.69)} & 0.008 \\
+ & Q4 & 0.45 (0.29-0.67) & \textbf{0.41 (0.26-0.65)} & 0.004 \\
+\addlinespace
+Minutes in REM quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.41 (0.27-0.62) & \textbf{0.39 (0.24-0.60)} & $9.2\times10^{-4}$ \\
+ & Q3 & 0.40 (0.26-0.61) & \textbf{0.39 (0.25-0.61)} & 0.001 \\
+ & Q4 & 0.39 (0.25-0.59) & \textbf{0.41 (0.25-0.64)} & 0.003 \\
+\addlinespace
+Sleep efficiency quartiles (\%) & Q1 & reference & reference & \\
+ & Q2 & 1.48 (0.96-2.31) & 1.54 (0.97-2.47) & 1.000 \\
+ & Q3 & 1.12 (0.70-1.79) & 1.12 (0.68-1.86) & 1.000 \\
+ & Q4 & 1.24 (0.79-1.96) & 1.43 (0.87-2.36) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
+
+\subsection{Activity exposures --- direction contrary to hypothesis}
 \label{sec:activity-anomaly}
-The activity results run \emph{opposite} to the pre-specified hypothesis and are large:
+The activity results run opposite to the pre-specified hypothesis and are large: more active
+minutes predict \emph{higher} GERD odds and more sedentary time \emph{lower} odds.
+\textbf{These estimates must not be interpreted biologically as they stand.} Five of the eight
+defects in Section~\ref{sec:defects-run} bear directly on the activity tables.
 
-\begin{table}[h]
-\centering
-\footnotesize
-\begin{tabular}{@{}lccc@{}}
-\toprule
-\textbf{Exposure (Q4 vs Q1)} & \textbf{aOR} & \textbf{95\% CI} & \textbf{$p_{\text{adj}}$} \\
-\midrule
-Lightly active minutes & 4.16 & 3.35--5.20 & $2.2\times10^{-35}$ \\
-Total active minutes   & 4.08 & 3.29--5.11 & $7.7\times10^{-35}$ \\
-Fairly active minutes  & 2.81 & 2.27--3.50 & $2.2\times10^{-19}$ \\
-Very active minutes    & 2.81 & 2.27--3.50 & $2.2\times10^{-19}$ \\
-Sedentary minutes      & 0.23 & 0.18--0.29 & $3.3\times10^{-36}$ \\
-\bottomrule
-\end{tabular}
-\caption{Activity exposures and GERD. More activity predicts \emph{higher} odds and more
-sedentary time \emph{lower} odds --- the reverse of the hypothesis.}
-\end{table}
+The decisive internal evidence is a contrast within the table itself. \emph{Daily steps} is the one
+activity exposure that is a direct accelerometer count rather than a heart-rate-zone derivative,
+and it is the one exposure that does \emph{not} survive correction (Q4 aOR $1.34$,
+$p_{\text{adj}}=0.24$), attenuating from its unadjusted $1.58$. Every zone-derived exposure --- all
+of which scale with how long the device was worn --- carries a large ``effect''. A biological
+mechanism that raised reflux risk with activity would not spare the only clean activity measure.
 
-\noindent \textbf{These estimates should not be interpreted biologically as they stand.} Three
-defects documented in Section~\ref{sec:defects-run} bear directly on them, and the
-``fairly active'' and ``very active'' rows above are numerically identical because they are the
-same variable computed twice. The activity exposures are absolute minutes per day derived from
-heart-rate zones, so they scale with how long the device was worn; wear time is not in the
-adjustment set; and GERD cases contribute far more valid days than non-cases
-(1{,}166 [556, 1{,}920] nights versus 569 [363, 1{,}223], a $2.1\times$ gap in the sleep cohort
-and $\approx 4.6\times$ in the activity cohort). A gradient in recorded active minutes is exactly
-what differential wear would produce. The sleep findings are far less exposed to this, because
-sleep-stage exposures are per-night proportions of a night rather than accumulating totals.
 
-\subsection{Spline analysis and the quartile comparison}
-The restricted-cubic-spline models agree with the quartile models on direction everywhere and
-sharpen them in places. Across the sleep cohort's 16 exposure--outcome pairs: 4 showed genuine
-non-linearity, 5 agreed with the quartile result but with narrower intervals, 6 found no
-association under either method, and 1 agreed on a linear association. Restless minutes and light
-sleep are the two clearly non-linear sleep relationships
-($p_{\text{non-linear}} = 2.8\times10^{-14}$ and $2.2\times10^{-3}$).
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Activity exposures and GERD (Configuration 2). Unadjusted $n=21{,}730$; adjusted $n=19{,}228$. See Section~\ref{sec:defects-run}: `very active' duplicates `fairly active' (D1), `sedentary' is a wear-time measure (D8), and `maximum daily heart rate' is a constant (D7).}\label{tab:res-act-gerd}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Daily steps quartiles (steps) & Q1 & reference & reference & \\
+ & Q2 & 1.50 (1.24-1.82) & 1.32 (1.07-1.64) & 0.192 \\
+ & Q3 & 1.56 (1.29-1.89) & 1.31 (1.05-1.62) & 0.316 \\
+ & Q4 & 1.58 (1.31-1.91) & 1.34 (1.07-1.67) & 0.238 \\
+\addlinespace
+Lightly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.04 (0.81-1.33) & 1.13 (0.87-1.48) & 1.000 \\
+ & Q3 & 2.20 (1.78-2.74) & \textbf{2.34 (1.86-2.97)} & $2.7\times10^{-11}$ \\
+ & Q4 & 4.23 (3.48-5.19) & \textbf{4.16 (3.35-5.20)} & $2.2\times10^{-35}$ \\
+\addlinespace
+Fairly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.11 (0.90-1.37) & 1.16 (0.92-1.45) & 1.000 \\
+ & Q3 & 1.58 (1.30-1.92) & \textbf{1.82 (1.48-2.26)} & $6.9\times10^{-7}$ \\
+ & Q4 & 2.21 (1.84-2.66) & \textbf{2.81 (2.27-3.50)} & $2.2\times10^{-19}$ \\
+\addlinespace
+Very active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.11 (0.90-1.37) & 1.16 (0.92-1.45) & 1.000 \\
+ & Q3 & 1.58 (1.30-1.92) & \textbf{1.82 (1.48-2.26)} & $6.9\times10^{-7}$ \\
+ & Q4 & 2.21 (1.84-2.66) & \textbf{2.81 (2.27-3.50)} & $2.2\times10^{-19}$ \\
+\addlinespace
+Total active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.06 (0.83-1.36) & 1.11 (0.85-1.45) & 1.000 \\
+ & Q3 & 2.13 (1.73-2.65) & \textbf{2.27 (1.80-2.88)} & $1.5\times10^{-10}$ \\
+ & Q4 & 4.14 (3.40-5.06) & \textbf{4.08 (3.29-5.11)} & $7.7\times10^{-35}$ \\
+\addlinespace
+Sedentary minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.55 (0.47-0.63) & \textbf{0.58 (0.50-0.69)} & $2.3\times10^{-9}$ \\
+ & Q3 & 0.23 (0.18-0.27) & \textbf{0.25 (0.20-0.31)} & $4.7\times10^{-34}$ \\
+ & Q4 & 0.22 (0.18-0.27) & \textbf{0.23 (0.18-0.29)} & $3.3\times10^{-36}$ \\
+\addlinespace
+Maximum daily heart rate quartiles (bpm) & Q1 & reference & reference & \\
+ & Q2 & 0.96 (0.82-1.14) & 0.95 (0.78-1.15) & 1.000 \\
+ & Q3 & 0.78 (0.65-0.92) & 1.01 (0.79-1.28) & 1.000 \\
+ & Q4 & 0.66 (0.55-0.79) & 0.91 (0.63-1.32) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Activity exposures and oesophagitis (Configuration 5). 244 cases. Same three defects apply.}\label{tab:res-act-eso}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Daily steps quartiles (steps) & Q1 & reference & reference & \\
+ & Q2 & 1.65 (1.13-2.44) & 1.62 (1.07-2.49) & 0.534 \\
+ & Q3 & 1.46 (0.99-2.18) & 1.53 (0.99-2.39) & 1.000 \\
+ & Q4 & 1.72 (1.18-2.55) & 1.86 (1.19-2.93) & 0.147 \\
+\addlinespace
+Lightly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.50 (0.90-2.55) & 1.64 (0.95-2.92) & 1.000 \\
+ & Q3 & 2.77 (1.76-4.52) & \textbf{2.76 (1.67-4.75)} & 0.003 \\
+ & Q4 & 5.00 (3.28-7.96) & \textbf{4.75 (2.97-7.99)} & $1.1\times10^{-8}$ \\
+\addlinespace
+Fairly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.50 (0.96-2.38) & 1.26 (0.78-2.07) & 1.000 \\
+ & Q3 & 2.30 (1.53-3.53) & \textbf{2.31 (1.49-3.66)} & 0.005 \\
+ & Q4 & 2.88 (1.94-4.37) & \textbf{2.70 (1.73-4.34)} & $4.3\times10^{-4}$ \\
+\addlinespace
+Very active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.50 (0.96-2.38) & 1.26 (0.78-2.07) & 1.000 \\
+ & Q3 & 2.30 (1.53-3.53) & \textbf{2.31 (1.49-3.66)} & 0.005 \\
+ & Q4 & 2.88 (1.94-4.37) & \textbf{2.70 (1.73-4.34)} & $4.3\times10^{-4}$ \\
+\addlinespace
+Total active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.55 (0.93-2.62) & 1.70 (0.99-3.02) & 1.000 \\
+ & Q3 & 2.94 (1.88-4.78) & \textbf{2.92 (1.77-5.01)} & 0.001 \\
+ & Q4 & 4.79 (3.14-7.62) & \textbf{4.58 (2.86-7.71)} & $3.1\times10^{-8}$ \\
+\addlinespace
+Sedentary minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.62 (0.46-0.83) & 0.65 (0.47-0.89) & 0.151 \\
+ & Q3 & 0.30 (0.20-0.43) & \textbf{0.30 (0.20-0.46)} & $4.5\times10^{-7}$ \\
+ & Q4 & 0.19 (0.12-0.29) & \textbf{0.20 (0.12-0.32)} & $6.8\times10^{-9}$ \\
+\addlinespace
+Maximum daily heart rate quartiles (bpm) & Q1 & reference & reference & \\
+ & Q2 & 1.31 (0.93-1.85) & 1.24 (0.85-1.83) & 1.000 \\
+ & Q3 & 0.81 (0.55-1.19) & 1.03 (0.62-1.71) & 1.000 \\
+ & Q4 & 1.02 (0.71-1.46) & 1.29 (0.60-2.81) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
 
-In the activity cohort 11 of 12 pairs were flagged \code{SPLINE ADDS: relationship is non-linear}.
-Read against Section~\ref{sec:activity-anomaly} this is more likely to reflect the wear-time
-gradient than a biological dose--response, and is another reason to resolve the exposure
-definition before interpreting the activity arm.
+\subsection{Combined cohort (Configurations 3 and 6)}
+\label{sec:res-comb}
+The combined cohort reproduces both arms with almost unchanged estimates, fitting 15 models per
+outcome against 8 and 7 in the single-modality cohorts. Full results are in
+Tables~\ref{tab:res-comb-gerd} and~\ref{tab:res-comb-eso}.
+
+
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Combined cohort, GERD (Configuration 3). Adjusted $n=12{,}341$.}\label{tab:res-comb-gerd}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Minutes asleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.87 (0.70-1.08) & 0.87 (0.69-1.10) & 1.000 \\
+ & Q3 & 1.10 (0.90-1.36) & 1.08 (0.86-1.36) & 1.000 \\
+ & Q4 & 0.93 (0.75-1.15) & 0.92 (0.72-1.17) & 1.000 \\
+\addlinespace
+Minutes in bed quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.87 (0.70-1.08) & 0.82 (0.65-1.04) & 1.000 \\
+ & Q3 & 1.04 (0.85-1.28) & 1.01 (0.80-1.27) & 1.000 \\
+ & Q4 & 0.97 (0.78-1.19) & 0.99 (0.78-1.25) & 1.000 \\
+\addlinespace
+Minutes awake quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.64 (0.52-0.77) & \textbf{0.70 (0.57-0.86)} & 0.037 \\
+ & Q3 & 0.52 (0.42-0.64) & \textbf{0.60 (0.48-0.75)} & $4.2\times10^{-4}$ \\
+ & Q4 & 0.45 (0.36-0.55) & \textbf{0.53 (0.42-0.68)} & $2.0\times10^{-5}$ \\
+\addlinespace
+Minutes restless quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.30 (0.98-1.73) & 1.25 (0.93-1.69) & 1.000 \\
+ & Q3 & 2.21 (1.72-2.87) & \textbf{2.09 (1.60-2.75)} & $4.1\times10^{-6}$ \\
+ & Q4 & 3.90 (3.08-4.98) & \textbf{3.37 (2.63-4.38)} & $5.3\times10^{-19}$ \\
+\addlinespace
+Minutes in deep sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.64 (0.52-0.78) & \textbf{0.67 (0.54-0.83)} & 0.013 \\
+ & Q3 & 0.54 (0.44-0.67) & \textbf{0.52 (0.41-0.65)} & $7.3\times10^{-7}$ \\
+ & Q4 & 0.59 (0.48-0.72) & \textbf{0.51 (0.40-0.64)} & $2.7\times10^{-7}$ \\
+\addlinespace
+Minutes in light sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.49 (0.41-0.60) & \textbf{0.54 (0.44-0.66)} & $2.5\times10^{-7}$ \\
+ & Q3 & 0.36 (0.29-0.45) & \textbf{0.39 (0.31-0.49)} & $5.1\times10^{-14}$ \\
+ & Q4 & 0.33 (0.26-0.41) & \textbf{0.39 (0.31-0.50)} & $3.0\times10^{-12}$ \\
+\addlinespace
+Minutes in REM quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.66 (0.54-0.80) & 0.71 (0.57-0.87) & 0.068 \\
+ & Q3 & 0.59 (0.48-0.72) & \textbf{0.59 (0.47-0.74)} & $1.5\times10^{-4}$ \\
+ & Q4 & 0.54 (0.44-0.66) & \textbf{0.48 (0.38-0.61)} & $5.1\times10^{-8}$ \\
+\addlinespace
+Sleep efficiency quartiles (\%) & Q1 & reference & reference & \\
+ & Q2 & 1.14 (0.92-1.41) & 1.16 (0.92-1.46) & 1.000 \\
+ & Q3 & 1.11 (0.89-1.38) & 1.05 (0.83-1.33) & 1.000 \\
+ & Q4 & 1.16 (0.93-1.43) & 0.96 (0.75-1.23) & 1.000 \\
+\addlinespace
+Daily steps quartiles (steps) & Q1 & reference & reference & \\
+ & Q2 & 1.40 (1.12-1.76) & 1.24 (0.97-1.59) & 1.000 \\
+ & Q3 & 1.46 (1.17-1.83) & 1.24 (0.97-1.60) & 1.000 \\
+ & Q4 & 1.45 (1.16-1.82) & 1.24 (0.95-1.61) & 1.000 \\
+\addlinespace
+Lightly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.09 (0.82-1.44) & 1.15 (0.85-1.56) & 1.000 \\
+ & Q3 & 2.37 (1.86-3.04) & \textbf{2.43 (1.87-3.18)} & $2.6\times10^{-9}$ \\
+ & Q4 & 3.40 (2.70-4.32) & \textbf{3.40 (2.64-4.43)} & $5.5\times10^{-19}$ \\
+\addlinespace
+Fairly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.24 (0.98-1.57) & 1.39 (1.08-1.80) & 0.530 \\
+ & Q3 & 1.50 (1.20-1.90) & \textbf{1.81 (1.41-2.34)} & $2.2\times10^{-4}$ \\
+ & Q4 & 1.98 (1.59-2.47) & \textbf{2.66 (2.05-3.47)} & $1.3\times10^{-11}$ \\
+\addlinespace
+Very active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.24 (0.98-1.57) & 1.39 (1.08-1.80) & 0.530 \\
+ & Q3 & 1.50 (1.20-1.90) & \textbf{1.81 (1.41-2.34)} & $2.2\times10^{-4}$ \\
+ & Q4 & 1.98 (1.59-2.47) & \textbf{2.66 (2.05-3.47)} & $1.3\times10^{-11}$ \\
+\addlinespace
+Total active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.04 (0.79-1.38) & 1.07 (0.79-1.44) & 1.000 \\
+ & Q3 & 2.25 (1.77-2.88) & \textbf{2.29 (1.77-2.98)} & $2.5\times10^{-8}$ \\
+ & Q4 & 3.24 (2.57-4.10) & \textbf{3.22 (2.51-4.17)} & $6.8\times10^{-18}$ \\
+\addlinespace
+Sedentary minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.75 (0.63-0.90) & 0.78 (0.64-0.95) & 0.508 \\
+ & Q3 & 0.26 (0.20-0.33) & \textbf{0.28 (0.22-0.37)} & $7.6\times10^{-19}$ \\
+ & Q4 & 0.27 (0.21-0.34) & \textbf{0.28 (0.21-0.36)} & $7.7\times10^{-20}$ \\
+\addlinespace
+Maximum daily heart rate quartiles (bpm) & Q1 & reference & reference & \\
+ & Q2 & 0.83 (0.68-1.02) & 0.89 (0.71-1.12) & 1.000 \\
+ & Q3 & 0.78 (0.63-0.96) & 0.94 (0.74-1.20) & 1.000 \\
+ & Q4 & 0.65 (0.52-0.81) & 0.77 (0.60-0.99) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
+\begin{longtable}{@{}p{5.2cm}c p{3.0cm} p{3.0cm} r@{}}
+\caption{Combined cohort, oesophagitis (Configuration 6). 164 cases.}\label{tab:res-comb-eso}\\
+\toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule
+\endfirsthead \toprule \textbf{Exposure} & \textbf{Q} & \textbf{Unadjusted OR} & \textbf{Adjusted aOR} & \textbf{$p_{\text{adj}}$} \\ \midrule \endhead
+Minutes asleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.90 (0.58-1.41) & 0.87 (0.54-1.38) & 1.000 \\
+ & Q3 & 1.10 (0.72-1.68) & 1.07 (0.69-1.68) & 1.000 \\
+ & Q4 & 0.90 (0.58-1.41) & 0.85 (0.53-1.36) & 1.000 \\
+\addlinespace
+Minutes in bed quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.78 (0.49-1.21) & 0.68 (0.42-1.08) & 1.000 \\
+ & Q3 & 0.89 (0.58-1.36) & 0.85 (0.54-1.33) & 1.000 \\
+ & Q4 & 0.98 (0.64-1.49) & 0.87 (0.55-1.36) & 1.000 \\
+\addlinespace
+Minutes awake quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.59 (0.39-0.89) & 0.57 (0.37-0.87) & 0.463 \\
+ & Q3 & 0.43 (0.27-0.67) & \textbf{0.38 (0.22-0.61)} & 0.005 \\
+ & Q4 & 0.61 (0.40-0.91) & 0.52 (0.33-0.82) & 0.223 \\
+\addlinespace
+Minutes restless quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.39 (0.84-2.33) & 1.37 (0.81-2.34) & 1.000 \\
+ & Q3 & 1.16 (0.68-1.97) & 1.09 (0.62-1.91) & 1.000 \\
+ & Q4 & 2.81 (1.81-4.49) & \textbf{2.73 (1.72-4.46)} & 0.001 \\
+\addlinespace
+Minutes in deep sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.49 (0.32-0.73) & \textbf{0.45 (0.29-0.70)} & 0.022 \\
+ & Q3 & 0.49 (0.32-0.73) & 0.49 (0.32-0.76) & 0.064 \\
+ & Q4 & 0.39 (0.24-0.60) & \textbf{0.39 (0.24-0.63)} & 0.009 \\
+\addlinespace
+Minutes in light sleep quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.40 (0.26-0.62) & \textbf{0.39 (0.24-0.62)} & 0.003 \\
+ & Q3 & 0.46 (0.30-0.69) & \textbf{0.46 (0.29-0.71)} & 0.024 \\
+ & Q4 & 0.43 (0.28-0.65) & \textbf{0.40 (0.25-0.63)} & 0.005 \\
+\addlinespace
+Minutes in REM quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.41 (0.27-0.62) & \textbf{0.39 (0.24-0.60)} & 0.002 \\
+ & Q3 & 0.40 (0.26-0.61) & \textbf{0.40 (0.25-0.62)} & 0.003 \\
+ & Q4 & 0.39 (0.25-0.59) & \textbf{0.41 (0.25-0.64)} & 0.006 \\
+\addlinespace
+Sleep efficiency quartiles (\%) & Q1 & reference & reference & \\
+ & Q2 & 1.48 (0.96-2.31) & 1.54 (0.97-2.47) & 1.000 \\
+ & Q3 & 1.12 (0.70-1.79) & 1.12 (0.68-1.86) & 1.000 \\
+ & Q4 & 1.24 (0.79-1.96) & 1.43 (0.87-2.37) & 1.000 \\
+\addlinespace
+Daily steps quartiles (steps) & Q1 & reference & reference & \\
+ & Q2 & 1.42 (0.88-2.31) & 1.59 (0.95-2.71) & 1.000 \\
+ & Q3 & 1.52 (0.96-2.47) & 1.83 (1.08-3.13) & 1.000 \\
+ & Q4 & 1.74 (1.10-2.78) & 1.96 (1.16-3.40) & 0.619 \\
+\addlinespace
+Lightly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.23 (0.70-2.18) & 1.24 (0.68-2.26) & 1.000 \\
+ & Q3 & 2.34 (1.43-3.94) & 2.16 (1.28-3.79) & 0.236 \\
+ & Q4 & 2.95 (1.84-4.90) & \textbf{2.75 (1.66-4.75)} & 0.007 \\
+\addlinespace
+Fairly active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.16 (0.68-2.00) & 0.89 (0.49-1.61) & 1.000 \\
+ & Q3 & 2.38 (1.51-3.88) & 2.25 (1.38-3.77) & 0.071 \\
+ & Q4 & 2.06 (1.28-3.38) & 1.85 (1.09-3.21) & 1.000 \\
+\addlinespace
+Very active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.16 (0.68-2.00) & 0.89 (0.49-1.61) & 1.000 \\
+ & Q3 & 2.38 (1.51-3.88) & 2.25 (1.38-3.77) & 0.071 \\
+ & Q4 & 2.06 (1.28-3.38) & 1.85 (1.09-3.21) & 1.000 \\
+\addlinespace
+Total active minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 1.13 (0.64-2.00) & 1.26 (0.70-2.30) & 1.000 \\
+ & Q3 & 2.24 (1.38-3.73) & 2.16 (1.27-3.79) & 0.241 \\
+ & Q4 & 2.82 (1.77-4.64) & \textbf{2.75 (1.66-4.75)} & 0.007 \\
+\addlinespace
+Sedentary minutes quartiles (minutes) & Q1 & reference & reference & \\
+ & Q2 & 0.82 (0.57-1.17) & 0.82 (0.55-1.21) & 1.000 \\
+ & Q3 & 0.36 (0.22-0.57) & \textbf{0.39 (0.24-0.63)} & 0.007 \\
+ & Q4 & 0.30 (0.18-0.48) & \textbf{0.29 (0.16-0.50)} & $5.8\times10^{-4}$ \\
+\addlinespace
+Maximum daily heart rate quartiles (bpm) & Q1 & reference & reference & \\
+ & Q2 & 1.38 (0.89-2.15) & 1.37 (0.87-2.18) & 1.000 \\
+ & Q3 & 0.97 (0.60-1.56) & 0.97 (0.58-1.64) & 1.000 \\
+ & Q4 & 1.35 (0.87-2.11) & 1.27 (0.78-2.08) & 1.000 \\
+\addlinespace
+\bottomrule \end{longtable}
+
+\subsection{Mutually adjusted sleep\texorpdfstring{$\times$}{x}activity pairs}
+\label{sec:res-mutual}
+Four pre-specified pairs were fitted with a sleep term and an activity term in the same model. This
+is the most informative robustness check the run contains, because it asks whether the sleep
+associations are the activity artefact in another guise. They are not: deep sleep retains
+aOR $0.65$ ($0.52$--$0.82$) with total active minutes in the model, and REM retains $0.64$
+($0.51$--$0.82$) alongside sedentary minutes, while the two null sleep exposures stay null.
+
+
+\begin{longtable}{@{}p{5.6cm}p{4.2cm}r@{}}
+\caption{Mutually adjusted sleep$\times$activity models, combined cohort, GERD outcome ($n=12{,}341$).}\label{tab:res-mut-gerd}\\
+\toprule \textbf{Term} & \textbf{aOR (95\% CI)} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Term} & \textbf{aOR (95\% CI)} & \textbf{$p$} \\ \midrule \endhead
+\multicolumn{3}{@{}l@{}}{\itshape min\_asleep\_quartile + step\_quartile} \\
+\quad \code{min\_asleep\_quartileQ2} & 0.87 (0.69--1.10) & 0.243 \\
+\quad \code{min\_asleep\_quartileQ3} & 1.08 (0.86--1.36) & 0.485 \\
+\quad \code{min\_asleep\_quartileQ4} & 0.93 (0.73--1.19) & 0.564 \\
+\quad \code{step\_quartileQ2} & 1.24 (0.97--1.59) & 0.092 \\
+\quad \code{step\_quartileQ3} & 1.24 (0.96--1.60) & 0.096 \\
+\quad \code{step\_quartileQ4} & 1.23 (0.95--1.61) & 0.115 \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape sleep\_efficiency\_quartile + very\_active\_quartile} \\
+\quad \code{sleep\_efficiency\_quartileQ2} & 1.15 (0.91--1.45) & 0.244 \\
+\quad \code{sleep\_efficiency\_quartileQ3} & 1.06 (0.84--1.35) & 0.625 \\
+\quad \code{sleep\_efficiency\_quartileQ4} & 0.98 (0.77--1.25) & 0.868 \\
+\quad \code{very\_active\_quartileQ2} & 1.39 (1.08--1.80) & 0.012 \\
+\quad \code{very\_active\_quartileQ3} & 1.81 (1.40--2.34) & $5.4\times10^{-6}$ \\
+\quad \code{very\_active\_quartileQ4} & 2.65 (2.04--3.46) & $3.7\times10^{-13}$ \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape min\_deep\_quartile + total\_active\_quartile} \\
+\quad \code{min\_deep\_quartileQ2} & 0.73 (0.58--0.91) & 0.005 \\
+\quad \code{min\_deep\_quartileQ3} & 0.61 (0.49--0.77) & $3.0\times10^{-5}$ \\
+\quad \code{min\_deep\_quartileQ4} & 0.65 (0.52--0.82) & $3.7\times10^{-4}$ \\
+\quad \code{total\_active\_quartileQ2} & 1.06 (0.79--1.43) & 0.700 \\
+\quad \code{total\_active\_quartileQ3} & 2.17 (1.67--2.83) & $8.0\times10^{-9}$ \\
+\quad \code{total\_active\_quartileQ4} & 2.96 (2.30--3.85) & $1.4\times10^{-16}$ \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape min\_rem\_quartile + sedentary\_quartile} \\
+\quad \code{min\_rem\_quartileQ2} & 0.79 (0.63--0.98) & 0.030 \\
+\quad \code{min\_rem\_quartileQ3} & 0.70 (0.56--0.88) & 0.002 \\
+\quad \code{min\_rem\_quartileQ4} & 0.64 (0.51--0.82) & $3.1\times10^{-4}$ \\
+\quad \code{sedentary\_quartileQ2} & 0.82 (0.67--0.99) & 0.040 \\
+\quad \code{sedentary\_quartileQ3} & 0.31 (0.23--0.40) & $1.1\times10^{-17}$ \\
+\quad \code{sedentary\_quartileQ4} & 0.31 (0.23--0.40) & $2.9\times10^{-18}$ \\
+\addlinespace
+\bottomrule \end{longtable}
+\begin{longtable}{@{}p{5.6cm}p{4.2cm}r@{}}
+\caption{Mutually adjusted sleep$\times$activity models, combined cohort, oesophagitis outcome ($n=12{,}341$).}\label{tab:res-mut-eso}\\
+\toprule \textbf{Term} & \textbf{aOR (95\% CI)} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Term} & \textbf{aOR (95\% CI)} & \textbf{$p$} \\ \midrule \endhead
+\multicolumn{3}{@{}l@{}}{\itshape min\_asleep\_quartile + step\_quartile} \\
+\quad \code{min\_asleep\_quartileQ2} & 0.86 (0.54--1.37) & 0.525 \\
+\quad \code{min\_asleep\_quartileQ3} & 1.08 (0.69--1.69) & 0.737 \\
+\quad \code{min\_asleep\_quartileQ4} & 0.89 (0.55--1.44) & 0.639 \\
+\quad \code{step\_quartileQ2} & 1.58 (0.95--2.69) & 0.083 \\
+\quad \code{step\_quartileQ3} & 1.82 (1.08--3.12) & 0.027 \\
+\quad \code{step\_quartileQ4} & 1.95 (1.15--3.39) & 0.015 \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape sleep\_efficiency\_quartile + very\_active\_quartile} \\
+\quad \code{sleep\_efficiency\_quartileQ2} & 1.54 (0.97--2.47) & 0.071 \\
+\quad \code{sleep\_efficiency\_quartileQ3} & 1.13 (0.68--1.87) & 0.642 \\
+\quad \code{sleep\_efficiency\_quartileQ4} & 1.44 (0.87--2.38) & 0.154 \\
+\quad \code{very\_active\_quartileQ2} & 0.89 (0.49--1.61) & 0.710 \\
+\quad \code{very\_active\_quartileQ3} & 2.25 (1.38--3.77) & 0.002 \\
+\quad \code{very\_active\_quartileQ4} & 1.85 (1.09--3.23) & 0.025 \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape min\_deep\_quartile + total\_active\_quartile} \\
+\quad \code{min\_deep\_quartileQ2} & 0.48 (0.31--0.75) & 0.001 \\
+\quad \code{min\_deep\_quartileQ3} & 0.55 (0.35--0.85) & 0.008 \\
+\quad \code{min\_deep\_quartileQ4} & 0.47 (0.28--0.76) & 0.003 \\
+\quad \code{total\_active\_quartileQ2} & 1.25 (0.69--2.28) & 0.466 \\
+\quad \code{total\_active\_quartileQ3} & 1.99 (1.17--3.50) & 0.014 \\
+\quad \code{total\_active\_quartileQ4} & 2.42 (1.45--4.21) & 0.001 \\
+\addlinespace
+\multicolumn{3}{@{}l@{}}{\itshape min\_rem\_quartile + sedentary\_quartile} \\
+\quad \code{min\_rem\_quartileQ2} & 0.42 (0.26--0.66) & $1.9\times10^{-4}$ \\
+\quad \code{min\_rem\_quartileQ3} & 0.45 (0.28--0.70) & $5.8\times10^{-4}$ \\
+\quad \code{min\_rem\_quartileQ4} & 0.51 (0.31--0.80) & 0.004 \\
+\quad \code{sedentary\_quartileQ2} & 0.88 (0.59--1.31) & 0.535 \\
+\quad \code{sedentary\_quartileQ3} & 0.45 (0.27--0.72) & 0.001 \\
+\quad \code{sedentary\_quartileQ4} & 0.34 (0.19--0.58) & $1.4\times10^{-4}$ \\
+\addlinespace
+\bottomrule \end{longtable}
+
+\subsection{Restricted cubic splines}
+\label{sec:res-spline}
+Splines were fitted for every continuous exposure with knot count chosen by AIC. The constant
+max-heart-rate exposure was correctly skipped, giving 12 activity rows rather than 14. In the sleep
+cohort the exposures split cleanly into two non-linear (restless, light sleep), three linear
+(awake, deep, REM) and three null; the activity cohort is uniformly non-linear, which is what a
+wear-time gradient would produce rather than a dose--response. Under splines, daily steps reaches
+nominal significance (OR $1.20$ per P25$\to$P75, $p_{\text{adj}}=0.041$) where the quartile model
+did not --- the only place the two methods materially disagree.
+
+For oesophagitis, events per variable fall to $5.5$--$7.1$ and every spline row is flagged
+\code{UNSTABLE}. Those fits are directional only and must not be quoted with their intervals.
+
+
+\footnotesize\begin{longtable}{@{}p{3.3cm}p{1.7cm}c p{2.1cm} r r p{1.6cm}@{}}
+\caption{Restricted cubic spline fits, all three cohorts and both outcomes, reproduced from the three \code{*\_spline\_summary.csv} files. OR compares the 75th to the 25th percentile of the exposure.}\label{tab:res-spline}\\
+\toprule \textbf{Exposure} & \textbf{Outcome} & \textbf{K} & \textbf{OR (95\% CI)} & \textbf{$p_{\text{ovr}}$} & \textbf{$p_{\text{nl}}$} & \textbf{Shape} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{Outcome} & \textbf{K} & \textbf{OR (95\% CI)} & \textbf{$p_{\text{ovr}}$} & \textbf{$p_{\text{nl}}$} & \textbf{Shape} \\ \midrule \endhead
+\multicolumn{7}{@{}l@{}}{\itshape Sleep cohort --- 16 fits, EPV 5.5--22.9} \\
+\code{avg\_min\_asleep} & gerd\_any & 3 & 0.99 (0.88--1.12) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_in\_bed} & gerd\_any & 3 & 1.03 (0.92--1.16) & 1.000 & 0.827 & no association \\
+\code{avg\_min\_awake} & gerd\_any & 3 & 0.73 (0.65--0.82) & $1.2\times10^{-7}$ & 1.000 & linear \\
+\code{avg\_min\_restless} & gerd\_any & 4 & 2.47 (2.03--3.00) & $8.1\times10^{-28}$ & $2.8\times10^{-14}$ & non-linear \\
+\code{avg\_min\_deep} & gerd\_any & 3 & 0.71 (0.64--0.80) & $3.5\times10^{-9}$ & 1.000 & linear \\
+\code{avg\_min\_light} & gerd\_any & 5 & 0.56 (0.44--0.70) & $4.9\times10^{-20}$ & 0.002 & non-linear \\
+\code{avg\_min\_rem} & gerd\_any & 3 & 0.68 (0.60--0.77) & $1.5\times10^{-9}$ & 1.000 & linear \\
+\code{avg\_sleep\_efficiency} & gerd\_any & 5 & 1.06 (0.84--1.33) & 0.284 & 0.189 & no association \\
+\code{avg\_min\_asleep} & esophagitis & 3 & 0.91 (0.71--1.17) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_in\_bed} & esophagitis & 3 & 0.96 (0.76--1.20) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_awake} & esophagitis & 3 & 0.72 (0.59--0.88) & $4.1\times10^{-5}$ & 0.014 & non-linear \\
+\code{avg\_min\_restless} & esophagitis & 5 & 1.17 (0.75--1.84) & $4.6\times10^{-5}$ & 0.013 & non-linear \\
+\code{avg\_min\_deep} & esophagitis & 3 & 0.64 (0.50--0.82) & $7.9\times10^{-5}$ & 1.000 & linear \\
+\code{avg\_min\_light} & esophagitis & 3 & 0.83 (0.65--1.06) & $1.8\times10^{-6}$ & 0.099 & linear \\
+\code{avg\_min\_rem} & esophagitis & 5 & 0.89 (0.56--1.42) & $1.9\times10^{-5}$ & 0.229 & linear \\
+\code{avg\_sleep\_efficiency} & esophagitis & 3 & 1.09 (0.85--1.39) & 1.000 & 1.000 & no association \\
+\addlinespace
+\multicolumn{7}{@{}l@{}}{\itshape Activity cohort --- 12 fits, EPV 6.8--30.4} \\
+\code{avg\_daily\_steps} & gerd\_any & 3 & 1.20 (1.06--1.37) & 0.041 & 0.045 & non-linear \\
+\code{avg\_lightly\_active\_min} & gerd\_any & 3 & 3.11 (2.63--3.67) & $2.9\times10^{-59}$ & $2.7\times10^{-23}$ & non-linear \\
+\code{avg\_fairly\_active\_min} & gerd\_any & 4 & 2.00 (1.71--2.32) & $2.1\times10^{-23}$ & $1.3\times10^{-11}$ & non-linear \\
+\code{avg\_very\_active\_min} & gerd\_any & 4 & 2.00 (1.71--2.32) & $2.1\times10^{-23}$ & $1.3\times10^{-11}$ & non-linear \\
+\code{avg\_total\_active\_min} & gerd\_any & 3 & 3.06 (2.59--3.62) & $2.6\times10^{-57}$ & $2.1\times10^{-22}$ & non-linear \\
+\code{avg\_sedentary\_min} & gerd\_any & 5 & 0.25 (0.21--0.31) & $6.0\times10^{-64}$ & $1.0\times10^{-22}$ & non-linear \\
+\code{avg\_daily\_steps} & esophagitis & 5 & 1.25 (0.85--1.84) & 0.024 & 0.165 & linear \\
+\code{avg\_lightly\_active\_min} & esophagitis & 3 & 3.30 (2.36--4.63) & $5.0\times10^{-13}$ & $3.4\times10^{-8}$ & non-linear \\
+\code{avg\_fairly\_active\_min} & esophagitis & 3 & 2.50 (1.81--3.45) & $1.8\times10^{-7}$ & $2.1\times10^{-6}$ & non-linear \\
+\code{avg\_very\_active\_min} & esophagitis & 3 & 2.50 (1.81--3.45) & $1.8\times10^{-7}$ & $2.1\times10^{-6}$ & non-linear \\
+\code{avg\_total\_active\_min} & esophagitis & 3 & 3.23 (2.31--4.53) & $1.0\times10^{-12}$ & $7.1\times10^{-8}$ & non-linear \\
+\code{avg\_sedentary\_min} & esophagitis & 3 & 0.29 (0.20--0.41) & $7.5\times10^{-14}$ & $5.0\times10^{-7}$ & non-linear \\
+\addlinespace
+\multicolumn{7}{@{}l@{}}{\itshape Combined cohort --- 28 fits, EPV 5.5--22.7} \\
+\code{avg\_min\_asleep} & gerd\_any & 3 & 1.00 (0.88--1.13) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_in\_bed} & gerd\_any & 3 & 1.03 (0.92--1.16) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_awake} & gerd\_any & 3 & 0.73 (0.65--0.82) & $8.2\times10^{-7}$ & 1.000 & linear \\
+\code{avg\_min\_restless} & gerd\_any & 4 & 2.45 (2.02--2.98) & $2.2\times10^{-27}$ & $1.2\times10^{-13}$ & non-linear \\
+\code{avg\_min\_deep} & gerd\_any & 3 & 0.71 (0.63--0.79) & $2.1\times10^{-9}$ & 1.000 & linear \\
+\code{avg\_min\_light} & gerd\_any & 5 & 0.55 (0.43--0.70) & $1.8\times10^{-19}$ & 0.002 & non-linear \\
+\code{avg\_min\_rem} & gerd\_any & 3 & 0.68 (0.60--0.77) & $5.1\times10^{-9}$ & 1.000 & linear \\
+\code{avg\_sleep\_efficiency} & gerd\_any & 5 & 1.06 (0.84--1.34) & 1.000 & 0.684 & no association \\
+\code{avg\_daily\_steps} & gerd\_any & 5 & 1.04 (0.83--1.31) & 0.162 & 0.104 & no association \\
+\code{avg\_lightly\_active\_min} & gerd\_any & 3 & 3.05 (2.48--3.74) & $1.4\times10^{-32}$ & $2.9\times10^{-15}$ & non-linear \\
+\code{avg\_fairly\_active\_min} & gerd\_any & 4 & 1.85 (1.53--2.22) & $4.2\times10^{-11}$ & $9.1\times10^{-6}$ & non-linear \\
+\code{avg\_very\_active\_min} & gerd\_any & 4 & 1.85 (1.53--2.22) & $4.2\times10^{-11}$ & $9.1\times10^{-6}$ & non-linear \\
+\code{avg\_total\_active\_min} & gerd\_any & 3 & 2.94 (2.40--3.61) & $2.7\times10^{-31}$ & $4.1\times10^{-14}$ & non-linear \\
+\code{avg\_sedentary\_min} & gerd\_any & 5 & 0.26 (0.21--0.33) & $4.6\times10^{-35}$ & $4.1\times10^{-16}$ & non-linear \\
+\code{avg\_min\_asleep} & esophagitis & 3 & 0.91 (0.71--1.17) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_in\_bed} & esophagitis & 3 & 0.96 (0.76--1.20) & 1.000 & 1.000 & no association \\
+\code{avg\_min\_awake} & esophagitis & 3 & 0.71 (0.58--0.87) & $1.0\times10^{-4}$ & 0.024 & non-linear \\
+\code{avg\_min\_restless} & esophagitis & 5 & 1.16 (0.74--1.83) & $5.4\times10^{-5}$ & 0.021 & non-linear \\
+\code{avg\_min\_deep} & esophagitis & 3 & 0.64 (0.50--0.83) & $2.3\times10^{-4}$ & 1.000 & linear \\
+\code{avg\_min\_light} & esophagitis & 3 & 0.82 (0.64--1.05) & $3.1\times10^{-6}$ & 0.133 & linear \\
+\code{avg\_min\_rem} & esophagitis & 5 & 0.91 (0.57--1.46) & $1.5\times10^{-5}$ & 0.357 & linear \\
+\code{avg\_sleep\_efficiency} & esophagitis & 3 & 1.10 (0.86--1.40) & 1.000 & 1.000 & no association \\
+\code{avg\_daily\_steps} & esophagitis & 3 & 1.60 (1.17--2.18) & 0.103 & 0.569 & no association \\
+\code{avg\_lightly\_active\_min} & esophagitis & 3 & 2.64 (1.75--3.97) & $1.4\times10^{-5}$ & 0.004 & non-linear \\
+\code{avg\_fairly\_active\_min} & esophagitis & 5 & 2.73 (1.69--4.42) & 0.008 & 0.014 & non-linear \\
+\code{avg\_very\_active\_min} & esophagitis & 5 & 2.73 (1.69--4.42) & 0.008 & 0.014 & non-linear \\
+\code{avg\_total\_active\_min} & esophagitis & 3 & 2.56 (1.70--3.84) & $1.5\times10^{-5}$ & 0.008 & non-linear \\
+\code{avg\_sedentary\_min} & esophagitis & 3 & 0.34 (0.22--0.52) & $1.7\times10^{-6}$ & 0.004 & non-linear \\
+\addlinespace
+\bottomrule \end{longtable}\normalsize
+
+\subsection{Quartile versus spline}
+\label{sec:res-qvs}
+The two methods never contradict each other on direction across all 56 pairs. Confidence intervals
+from the spline are $0.76$--$1.12\times$ the quartile width, so the spline is generally the more
+precise estimator without being materially wider anywhere.
+
+
+\begin{table}[h]\centering\footnotesize\begin{tabular}{@{}p{7.2cm}rrrr@{}}\toprule
+\textbf{Verdict} & \textbf{Sleep} & \textbf{Activity} & \textbf{Combined} & \textbf{Total} \\ \midrule
+agree - both find the same linear association & 1 & 1 & 1 & 3 \\
+agree - neither finds an association & 6 & 0 & 8 & 14 \\
+agree; spline more precise & 5 & 0 & 5 & 10 \\
+SPLINE ADDS: relationship is non-linear & 4 & 11 & 14 & 29 \\
+\midrule Total pairs & 16 & 12 & 28 & 56 \\
+\bottomrule\end{tabular}\caption{Head-to-head verdicts across all 56 exposure--outcome pairs.}\label{tab:res-qvs}\end{table}
+\begin{table}[h]\centering\footnotesize\begin{tabular}{@{}llrr@{}}\toprule
+\textbf{Cohort} & \textbf{Exposure} & \textbf{$\Delta$AIC} & \textbf{CI width ratio} \\ \midrule
+activity & \code{avg\_sedentary\_min} & -31.9 & 1.00 \\
+activity & \code{avg\_lightly\_active\_min} & -20.7 & 0.89 \\
+combined & \code{avg\_lightly\_active\_min} & -17.4 & 0.88 \\
+combined & \code{avg\_total\_active\_min} & -17.0 & 0.90 \\
+activity & \code{avg\_total\_active\_min} & -16.8 & 0.89 \\
+combined & \code{avg\_min\_restless} & -14.5 & 0.93 \\
+sleep & \code{avg\_min\_restless} & -13.8 & 0.93 \\
+sleep & \code{avg\_min\_light} & -9.6 & 0.96 \\
+\bottomrule\end{tabular}\caption{The eight largest AIC improvements from the spline over the quartile model (negative favours the spline).}\label{tab:res-aic}\end{table}
+
+\subsection{Shape of the fitted curves}
+\label{sec:res-curves}
+The 56 curve files give the fitted odds ratio across 203 points spanning each observed exposure
+range. Thirty-nine of the 56 have an interior turning point rather than a monotone trend. For the
+two clearly non-linear sleep relationships the shape is interpretable:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt]
+\item \textbf{Restless minutes} rise steeply from the reference to a peak odds ratio of $2.40$ at
+about 18 minutes per night, then flatten. Risk is concentrated in the transition from almost no
+restlessness to a moderate amount; further restlessness adds little.
+\item \textbf{Light sleep} reaches its highest odds ($2.78$) at the low end of the range, around
+125 minutes, falling to a nadir near 364 minutes --- a deficiency effect rather than a graded
+dose--response.
+\end{itemize}
+
+\noindent Minutes awake, deep sleep and REM are monotone across their range, matching the
+\code{linear} classification in Table~\ref{tab:res-spline}.
+
+
 
 \subsection{Model diagnostics}
-Diagnostics were clean across all six configurations. Maximum adjusted GVIF was $1.41$--$1.49$
-(no collinearity concern), maximum Cook's distance $\approx 0.05$ (no influential observations),
-Box--Tidwell $p > 0.05$ for both continuous covariates (linearity on the logit scale holds), and
-zero duplicate \code{person_id} values in any analysis frame.
+\label{sec:res-diag}
+Every diagnostic passes across all 60 fitted models. GVIF never approaches the conventional
+threshold of 5, so collinearity is not a concern even in the 15-model combined configurations.
+Maximum Cook's distance is two orders of magnitude below 1, so no single participant drives any
+estimate. Box--Tidwell $p$-values exceed $0.05$ for both continuous covariates everywhere, so
+modelling age and BMI linearly on the logit scale is defensible. No analysis frame contains a
+duplicated \code{person_id}, the specific join hazard identified in Section~\ref{sec:joinhazards}.
+
+That the diagnostics are clean deserves emphasis rather than reassurance: none of the eight defects
+in Section~\ref{sec:defects-run} is the kind regression diagnostics detect. A constant exposure, a
+duplicated variable and a mis-specified wear proxy all produce perfectly well-behaved models. That
+is precisely why they survived to this point, and why the distributional checks in
+Table~\ref{tab:res-cut} did the work the diagnostics could not.
+
+
+\begin{table}[h]\centering\footnotesize\begin{tabular}{@{}lrrrrrr@{}}\toprule
+\textbf{Configuration} & \textbf{Models} & \textbf{Dup.\ IDs} & \textbf{GVIF max} & \textbf{Cook's max} & \textbf{B--T BMI} & \textbf{B--T age} \\ \midrule
+sleep\_gerd\_any & 8 & 0 & 1.241 & 0.0087 & 0.253 & 0.060 \\
+sleep\_esophagitis & 8 & 0 & 1.085 & 0.0306 & 0.513 & 0.161 \\
+activity\_gerd\_any & 7 & 0 & 1.411 & 0.0333 & 0.106 & 0.055 \\
+activity\_esophagitis & 7 & 0 & 1.489 & 0.0512 & 0.287 & 0.103 \\
+combined\_gerd\_any & 15 & 0 & 1.254 & 0.0087 & 0.280 & 0.063 \\
+combined\_esophagitis & 15 & 0 & 1.123 & 0.0312 & 0.507 & 0.162 \\
+\bottomrule\end{tabular}\caption{Diagnostics for all 60 fitted models. Box--Tidwell $p$-values test linearity on the logit scale.}\label{tab:res-diag}\end{table}
+
+\subsection{Figures}
+\label{sec:res-figs}
+The run produced 68 figures: six forest plots of adjusted odds ratios and six GVIF plots, one pair
+per configuration, and 56 spline curves with confidence bands, one per exposure--outcome pair. Each
+renders a table reported above and introduces no additional results. The activity forest plots and
+the 28 activity spline curves should not be circulated until the defects are resolved, since they
+display the compromised exposures.
+
 
 %======================================================================
 \section{Pre-Specified Expectations and Interpretation Framework}
@@ -3407,5 +4116,793 @@ The restricted cubic spline analysis and the quartile-versus-spline comparison
 were added after the primary quartile analysis was complete. Both are additive:
 no existing analysis file was modified, and the quartile results are unchanged by
 their presence.
+
+%======================================================================
+\section{Appendix M: Complete Result Tables}
+\label{sec:appM}
+%======================================================================
+This appendix reproduces, in full, every remaining table produced by the run: the five baseline
+tables not shown in Section~\ref{sec:results}, all six exposure-descriptive tables, the combined
+cohort's quartile boundaries, and the complete quartile-versus-spline comparison. Nothing is
+summarised or omitted.
+
+\subsection{Baseline characteristics, remaining configurations}
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Baseline characteristics --- Sleep cohort, oesophagitis. From \code{sleep\_esophagitis\_table1.csv}.}\label{tab:appM-t1-sleep-esophagitis}\\
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 13,776} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 13,776} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 56 [41, 67] & 59 [46, 66] & 0.10 \\
+\textbf{Age group} &  &  & 0.2 \\
+\quad <30 & 1,182 (8.6\%) & 9 (5.5\%) &  \\
+\quad 30-44 & 3,030 (22\%) & 29 (18\%) &  \\
+\quad 45-64 & 5,325 (39\%) & 71 (43\%) &  \\
+\quad 65+ & 4,239 (31\%) & 55 (34\%) &  \\
+\textbf{BMI (kg/m2)} & 29 [25, 35] & 30 [27, 35] & 0.14 \\
+\textbf{Sex at birth} &  &  & 0.5 \\
+\quad Female & 9,371 (68\%) & 106 (65\%) &  \\
+\quad Male & 4,356 (32\%) & 58 (35\%) &  \\
+\quad Other or Missing & 49 (0.4\%) & 0 (0\%) &  \\
+\textbf{Race} &  &  & 0.2 \\
+\quad White & 10,850 (79\%) & 140 (85\%) &  \\
+\quad Black & 765 (5.6\%) & 5 (3.0\%) &  \\
+\quad Asian & 349 (2.5\%) & 1 (0.6\%) &  \\
+\quad Other or Multiracial & 1,240 (9.0\%) & 13 (7.9\%) &  \\
+\quad Missing/Unknown & 572 (4.2\%) & 5 (3.0\%) &  \\
+\textbf{Ethnicity} &  &  & 0.4 \\
+\quad Non-Hispanic & 12,494 (91\%) & 150 (91\%) &  \\
+\quad Hispanic & 1,006 (7.3\%) & 9 (5.5\%) &  \\
+\quad Unknown/Missing & 276 (2.0\%) & 5 (3.0\%) &  \\
+\textbf{Education} &  &  & 0.088 \\
+\quad High school or less & 1,115 (8.2\%) & 9 (5.6\%) &  \\
+\quad Some college & 3,813 (28\%) & 36 (22\%) &  \\
+\quad College or higher & 8,751 (64\%) & 117 (72\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & 0.11 \\
+\quad Less than \$50k & 4,101 (32\%) & 37 (24\%) &  \\
+\quad \$50k to \$150k & 6,673 (51\%) & 84 (55\%) &  \\
+\quad \$150k or more & 2,184 (17\%) & 32 (21\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & 0.6 \\
+\quad 0 drinks per day & 2,242 (16\%) & 25 (15\%) &  \\
+\quad 1-2 drinks per day & 9,093 (66\%) & 114 (70\%) &  \\
+\quad 3-4 drinks per day & 1,418 (10\%) & 16 (9.8\%) &  \\
+\quad >=5 drinks per day & 344 (2.5\%) & 5 (3.0\%) &  \\
+\quad Unknown/Missing & 679 (4.9\%) & 4 (2.4\%) &  \\
+\textbf{Smoking status} &  &  & >0.9 \\
+\quad Non-smoker & 7,934 (58\%) & 96 (59\%) &  \\
+\quad Smoker & 5,538 (40\%) & 64 (39\%) &  \\
+\quad Unknown/Missing & 304 (2.2\%) & 4 (2.4\%) &  \\
+\textbf{Obstructive sleep apnea} & 2,648 (19\%) & 31 (19\%) & >0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 2,161 (16\%) & 34 (21\%) & 0.10 \\
+\textbf{Opioid analgesic} & 13,776 (100\%) & 164 (100\%) &  \\
+\textbf{Depression} & 5,273 (38\%) & 54 (33\%) & 0.2 \\
+\textbf{Anxiety} & 5,278 (38\%) & 57 (35\%) & 0.4 \\
+\textbf{Diabetes} & 2,068 (15\%) & 15 (9.1\%) & 0.047 \\
+\textbf{Hypertension} & 3,324 (24\%) & 38 (23\%) & 0.8 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & 0.12 \\
+\quad 0 & 10,866 (79\%) & 138 (84\%) &  \\
+\quad 1-2 & 2,910 (21\%) & 26 (16\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Baseline characteristics --- Activity cohort, GERD. From \code{activity\_gerd\_any\_table1.csv}.}\label{tab:appM-t1-activity-gerd-any}\\
+\toprule \textbf{Characteristic} & \textbf{No GERD     N = 20,707} & \textbf{GERD     N = 1,023} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No GERD     N = 20,707} & \textbf{GERD     N = 1,023} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 55 [40, 66] & 51 [37, 62] & <0.001 \\
+\textbf{Age group} &  &  & <0.001 \\
+\quad <30 & 1,780 (8.6\%) & 132 (13\%) &  \\
+\quad 30-44 & 4,761 (23\%) & 265 (26\%) &  \\
+\quad 45-64 & 8,114 (39\%) & 449 (44\%) &  \\
+\quad 65+ & 6,052 (29\%) & 177 (17\%) &  \\
+\textbf{BMI (kg/m2)} & 30 [26, 35] & 30 [26, 36] & 0.3 \\
+\textbf{Sex at birth} &  &  & <0.001 \\
+\quad Female & 13,999 (68\%) & 766 (75\%) &  \\
+\quad Male & 6,621 (32\%) & 255 (25\%) &  \\
+\quad Other or Missing & 87 (0.4\%) & 2 (0.2\%) &  \\
+\textbf{Race} &  &  & 0.001 \\
+\quad White & 15,391 (74\%) & 807 (79\%) &  \\
+\quad Black & 1,499 (7.2\%) & 79 (7.7\%) &  \\
+\quad Asian & 547 (2.6\%) & 24 (2.3\%) &  \\
+\quad Other or Multiracial & 2,142 (10\%) & 71 (6.9\%) &  \\
+\quad Missing/Unknown & 1,128 (5.4\%) & 42 (4.1\%) &  \\
+\textbf{Ethnicity} &  &  & 0.027 \\
+\quad Non-Hispanic & 18,354 (89\%) & 932 (91\%) &  \\
+\quad Hispanic & 1,890 (9.1\%) & 78 (7.6\%) &  \\
+\quad Unknown/Missing & 463 (2.2\%) & 13 (1.3\%) &  \\
+\textbf{Education} &  &  & <0.001 \\
+\quad High school or less & 2,103 (10\%) & 72 (7.1\%) &  \\
+\quad Some college & 6,332 (31\%) & 267 (26\%) &  \\
+\quad College or higher & 12,126 (59\%) & 672 (66\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & <0.001 \\
+\quad Less than \$50k & 7,283 (37\%) & 260 (27\%) &  \\
+\quad \$50k to \$150k & 9,364 (48\%) & 476 (50\%) &  \\
+\quad \$150k or more & 2,791 (14\%) & 224 (23\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & <0.001 \\
+\quad 0 drinks per day & 3,755 (18\%) & 147 (14\%) &  \\
+\quad 1-2 drinks per day & 13,073 (63\%) & 718 (70\%) &  \\
+\quad 3-4 drinks per day & 2,182 (11\%) & 96 (9.4\%) &  \\
+\quad >=5 drinks per day & 617 (3.0\%) & 16 (1.6\%) &  \\
+\quad Unknown/Missing & 1,080 (5.2\%) & 46 (4.5\%) &  \\
+\textbf{Smoking status} &  &  & <0.001 \\
+\quad Non-smoker & 11,517 (56\%) & 652 (64\%) &  \\
+\quad Smoker & 8,765 (42\%) & 352 (34\%) &  \\
+\quad Unknown/Missing & 425 (2.1\%) & 19 (1.9\%) &  \\
+\textbf{Obstructive sleep apnea} & 4,025 (19\%) & 201 (20\%) & >0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 3,500 (17\%) & 162 (16\%) & 0.4 \\
+\textbf{Opioid analgesic} & 20,707 (100\%) & 1,023 (100\%) &  \\
+\textbf{Depression} & 8,442 (41\%) & 325 (32\%) & <0.001 \\
+\textbf{Anxiety} & 8,391 (41\%) & 287 (28\%) & <0.001 \\
+\textbf{Diabetes} & 3,480 (17\%) & 120 (12\%) & <0.001 \\
+\textbf{Hypertension} & 4,946 (24\%) & 269 (26\%) & 0.085 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & <0.001 \\
+\quad 0 & 15,834 (76\%) & 862 (84\%) &  \\
+\quad 1-2 & 4,873 (24\%) & 161 (16\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Baseline characteristics --- Activity cohort, oesophagitis. From \code{activity\_esophagitis\_table1.csv}.}\label{tab:appM-t1-activity-esophagitis}\\
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 21,486} & \textbf{Oesophagitis     N = 244} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 21,486} & \textbf{Oesophagitis     N = 244} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 55 [40, 66] & 57 [44, 65] & 0.2 \\
+\textbf{Age group} &  &  & 0.2 \\
+\quad <30 & 1,897 (8.8\%) & 15 (6.1\%) &  \\
+\quad 30-44 & 4,977 (23\%) & 49 (20\%) &  \\
+\quad 45-64 & 8,453 (39\%) & 110 (45\%) &  \\
+\quad 65+ & 6,159 (29\%) & 70 (29\%) &  \\
+\textbf{BMI (kg/m2)} & 30 [26, 35] & 30 [26, 36] & 0.7 \\
+\textbf{Sex at birth} &  &  & 0.7 \\
+\quad Female & 14,593 (68\%) & 172 (70\%) &  \\
+\quad Male & 6,805 (32\%) & 71 (29\%) &  \\
+\quad Other or Missing & 88 (0.4\%) & 1 (0.4\%) &  \\
+\textbf{Race} &  &  & 0.078 \\
+\quad White & 15,997 (74\%) & 201 (82\%) &  \\
+\quad Black & 1,565 (7.3\%) & 13 (5.3\%) &  \\
+\quad Asian & 568 (2.6\%) & 3 (1.2\%) &  \\
+\quad Other or Multiracial & 2,196 (10\%) & 17 (7.0\%) &  \\
+\quad Missing/Unknown & 1,160 (5.4\%) & 10 (4.1\%) &  \\
+\textbf{Ethnicity} &  &  & 0.2 \\
+\quad Non-Hispanic & 19,064 (89\%) & 222 (91\%) &  \\
+\quad Hispanic & 1,953 (9.1\%) & 15 (6.1\%) &  \\
+\quad Unknown/Missing & 469 (2.2\%) & 7 (2.9\%) &  \\
+\textbf{Education} &  &  & 0.080 \\
+\quad High school or less & 2,157 (10\%) & 18 (7.5\%) &  \\
+\quad Some college & 6,536 (31\%) & 63 (26\%) &  \\
+\quad College or higher & 12,639 (59\%) & 159 (66\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & 0.010 \\
+\quad Less than \$50k & 7,479 (37\%) & 64 (28\%) &  \\
+\quad \$50k to \$150k & 9,723 (48\%) & 117 (52\%) &  \\
+\quad \$150k or more & 2,970 (15\%) & 45 (20\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & 0.11 \\
+\quad 0 drinks per day & 3,860 (18\%) & 42 (17\%) &  \\
+\quad 1-2 drinks per day & 13,623 (63\%) & 168 (69\%) &  \\
+\quad 3-4 drinks per day & 2,254 (10\%) & 24 (9.8\%) &  \\
+\quad >=5 drinks per day & 627 (2.9\%) & 6 (2.5\%) &  \\
+\quad Unknown/Missing & 1,122 (5.2\%) & 4 (1.6\%) &  \\
+\textbf{Smoking status} &  &  & 0.8 \\
+\quad Non-smoker & 12,028 (56\%) & 141 (58\%) &  \\
+\quad Smoker & 9,019 (42\%) & 98 (40\%) &  \\
+\quad Unknown/Missing & 439 (2.0\%) & 5 (2.0\%) &  \\
+\textbf{Obstructive sleep apnea} & 4,178 (19\%) & 48 (20\%) & >0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 3,607 (17\%) & 55 (23\%) & 0.021 \\
+\textbf{Opioid analgesic} & 21,486 (100\%) & 244 (100\%) &  \\
+\textbf{Depression} & 8,680 (40\%) & 87 (36\%) & 0.2 \\
+\textbf{Anxiety} & 8,578 (40\%) & 100 (41\%) & 0.8 \\
+\textbf{Diabetes} & 3,567 (17\%) & 33 (14\%) & 0.2 \\
+\textbf{Hypertension} & 5,159 (24\%) & 56 (23\%) & 0.8 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & 0.3 \\
+\quad 0 & 16,501 (77\%) & 195 (80\%) &  \\
+\quad 1-2 & 4,985 (23\%) & 49 (20\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Baseline characteristics --- Combined cohort, GERD. From \code{combined\_gerd\_any\_table1.csv}.}\label{tab:appM-t1-combined-gerd-any}\\
+\toprule \textbf{Characteristic} & \textbf{No GERD     N = 13,160} & \textbf{GERD     N = 718} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No GERD     N = 13,160} & \textbf{GERD     N = 718} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 56 [41, 67] & 51 [37, 62] & <0.001 \\
+\textbf{Age group} &  &  & <0.001 \\
+\quad <30 & 1,093 (8.3\%) & 92 (13\%) &  \\
+\quad 30-44 & 2,868 (22\%) & 175 (24\%) &  \\
+\quad 45-64 & 5,052 (38\%) & 321 (45\%) &  \\
+\quad 65+ & 4,147 (32\%) & 130 (18\%) &  \\
+\textbf{BMI (kg/m2)} & 29 [25, 35] & 30 [26, 35] & 0.064 \\
+\textbf{Sex at birth} &  &  & 0.004 \\
+\quad Female & 8,901 (68\%) & 527 (73\%) &  \\
+\quad Male & 4,213 (32\%) & 190 (26\%) &  \\
+\quad Other or Missing & 46 (0.3\%) & 1 (0.1\%) &  \\
+\textbf{Race} &  &  & <0.001 \\
+\quad White & 10,368 (79\%) & 576 (80\%) &  \\
+\quad Black & 708 (5.4\%) & 57 (7.9\%) &  \\
+\quad Asian & 331 (2.5\%) & 17 (2.4\%) &  \\
+\quad Other or Multiracial & 1,209 (9.2\%) & 38 (5.3\%) &  \\
+\quad Missing/Unknown & 544 (4.1\%) & 30 (4.2\%) &  \\
+\textbf{Ethnicity} &  &  & 0.3 \\
+\quad Non-Hispanic & 11,931 (91\%) & 656 (91\%) &  \\
+\quad Hispanic & 959 (7.3\%) & 53 (7.4\%) &  \\
+\quad Unknown/Missing & 270 (2.1\%) & 9 (1.3\%) &  \\
+\textbf{Education} &  &  & 0.14 \\
+\quad High school or less & 1,073 (8.2\%) & 44 (6.2\%) &  \\
+\quad Some college & 3,643 (28\%) & 195 (28\%) &  \\
+\quad College or higher & 8,355 (64\%) & 470 (66\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & <0.001 \\
+\quad Less than \$50k & 3,956 (32\%) & 166 (25\%) &  \\
+\quad \$50k to \$150k & 6,392 (52\%) & 340 (51\%) &  \\
+\quad \$150k or more & 2,037 (16\%) & 163 (24\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & 0.059 \\
+\quad 0 drinks per day & 2,155 (16\%) & 105 (15\%) &  \\
+\quad 1-2 drinks per day & 8,662 (66\%) & 504 (70\%) &  \\
+\quad 3-4 drinks per day & 1,369 (10\%) & 60 (8.4\%) &  \\
+\quad >=5 drinks per day & 335 (2.5\%) & 11 (1.5\%) &  \\
+\quad Unknown/Missing & 639 (4.9\%) & 38 (5.3\%) &  \\
+\textbf{Smoking status} &  &  & 0.034 \\
+\quad Non-smoker & 7,541 (57\%) & 446 (62\%) &  \\
+\quad Smoker & 5,324 (40\%) & 260 (36\%) &  \\
+\quad Unknown/Missing & 295 (2.2\%) & 12 (1.7\%) &  \\
+\textbf{Obstructive sleep apnea} & 2,529 (19\%) & 137 (19\%) & >0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 2,075 (16\%) & 107 (15\%) & 0.6 \\
+\textbf{Opioid analgesic} & 13,160 (100\%) & 718 (100\%) &  \\
+\textbf{Depression} & 5,087 (39\%) & 221 (31\%) & <0.001 \\
+\textbf{Anxiety} & 5,128 (39\%) & 190 (26\%) & <0.001 \\
+\textbf{Diabetes} & 1,995 (15\%) & 76 (11\%) & <0.001 \\
+\textbf{Hypertension} & 3,150 (24\%) & 194 (27\%) & 0.066 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & <0.001 \\
+\quad 0 & 10,341 (79\%) & 616 (86\%) &  \\
+\quad 1-2 & 2,819 (21\%) & 102 (14\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Baseline characteristics --- Combined cohort, oesophagitis. From \code{combined\_esophagitis\_table1.csv}.}\label{tab:appM-t1-combined-esophagitis}\\
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 13,714} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Characteristic} & \textbf{No oesophagitis     N = 13,714} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Age} & 56 [41, 67] & 59 [46, 66] & 0.10 \\
+\textbf{Age group} &  &  & 0.2 \\
+\quad <30 & 1,176 (8.6\%) & 9 (5.5\%) &  \\
+\quad 30-44 & 3,014 (22\%) & 29 (18\%) &  \\
+\quad 45-64 & 5,302 (39\%) & 71 (43\%) &  \\
+\quad 65+ & 4,222 (31\%) & 55 (34\%) &  \\
+\textbf{BMI (kg/m2)} & 29 [25, 35] & 30 [27, 35] & 0.14 \\
+\textbf{Sex at birth} &  &  & 0.5 \\
+\quad Female & 9,322 (68\%) & 106 (65\%) &  \\
+\quad Male & 4,345 (32\%) & 58 (35\%) &  \\
+\quad Other or Missing & 47 (0.3\%) & 0 (0\%) &  \\
+\textbf{Race} &  &  & 0.2 \\
+\quad White & 10,804 (79\%) & 140 (85\%) &  \\
+\quad Black & 760 (5.5\%) & 5 (3.0\%) &  \\
+\quad Asian & 347 (2.5\%) & 1 (0.6\%) &  \\
+\quad Other or Multiracial & 1,234 (9.0\%) & 13 (7.9\%) &  \\
+\quad Missing/Unknown & 569 (4.1\%) & 5 (3.0\%) &  \\
+\textbf{Ethnicity} &  &  & 0.4 \\
+\quad Non-Hispanic & 12,437 (91\%) & 150 (91\%) &  \\
+\quad Hispanic & 1,003 (7.3\%) & 9 (5.5\%) &  \\
+\quad Unknown/Missing & 274 (2.0\%) & 5 (3.0\%) &  \\
+\textbf{Education} &  &  & 0.087 \\
+\quad High school or less & 1,108 (8.1\%) & 9 (5.6\%) &  \\
+\quad Some college & 3,802 (28\%) & 36 (22\%) &  \\
+\quad College or higher & 8,708 (64\%) & 117 (72\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Income} &  &  & 0.10 \\
+\quad Less than \$50k & 4,085 (32\%) & 37 (24\%) &  \\
+\quad \$50k to \$150k & 6,648 (52\%) & 84 (55\%) &  \\
+\quad \$150k or more & 2,168 (17\%) & 32 (21\%) &  \\
+\quad Unknown/Missing & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Alcohol use} &  &  & 0.6 \\
+\quad 0 drinks per day & 2,235 (16\%) & 25 (15\%) &  \\
+\quad 1-2 drinks per day & 9,052 (66\%) & 114 (70\%) &  \\
+\quad 3-4 drinks per day & 1,413 (10\%) & 16 (9.8\%) &  \\
+\quad >=5 drinks per day & 341 (2.5\%) & 5 (3.0\%) &  \\
+\quad Unknown/Missing & 673 (4.9\%) & 4 (2.4\%) &  \\
+\textbf{Smoking status} &  &  & >0.9 \\
+\quad Non-smoker & 7,891 (58\%) & 96 (59\%) &  \\
+\quad Smoker & 5,520 (40\%) & 64 (39\%) &  \\
+\quad Unknown/Missing & 303 (2.2\%) & 4 (2.4\%) &  \\
+\textbf{Obstructive sleep apnea} & 2,635 (19\%) & 31 (19\%) & >0.9 \\
+\textbf{Sleep medication (tricyclic or hypnotic)} & 2,148 (16\%) & 34 (21\%) & 0.10 \\
+\textbf{Opioid analgesic} & 13,714 (100\%) & 164 (100\%) &  \\
+\textbf{Depression} & 5,254 (38\%) & 54 (33\%) & 0.2 \\
+\textbf{Anxiety} & 5,261 (38\%) & 57 (35\%) & 0.4 \\
+\textbf{Diabetes} & 2,056 (15\%) & 15 (9.1\%) & 0.048 \\
+\textbf{Hypertension} & 3,306 (24\%) & 38 (23\%) & 0.9 \\
+\textbf{Peptic ulcer disease} & 0 (0\%) & 0 (0\%) &  \\
+\textbf{Comorbidity index (partial)} &  &  & 0.12 \\
+\quad 0 & 10,819 (79\%) & 138 (84\%) &  \\
+\quad 1-2 & 2,895 (21\%) & 26 (16\%) &  \\
+\quad 3-4 & 0 (0\%) & 0 (0\%) &  \\
+\quad 5+ & 0 (0\%) & 0 (0\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\subsection{Exposure descriptives by case status}
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Sleep cohort, GERD. From \code{sleep\_gerd\_any\_table2.csv}.}\label{tab:appM-t2-sleep-gerd-any}\\
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 13,215} & \textbf{GERD     N = 725} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 13,215} & \textbf{GERD     N = 725} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid nights} & 569 [363, 1,223] & 1,166 [556, 1,920] & <0.001 \\
+\textbf{Average sleeping minutes} & 411 [376, 445] & 413 [375, 443] & 0.7 \\
+\textbf{Minutes asleep quartiles (minutes)} &  &  & 0.2 \\
+\quad Q1 (<376) & 3,299 (25\%) & 186 (26\%) &  \\
+\quad Q2 (376-411) & 3,320 (25\%) & 165 (23\%) &  \\
+\quad Q3 (412-445) & 3,283 (25\%) & 202 (28\%) &  \\
+\quad Q4 (>445) & 3,313 (25\%) & 172 (24\%) &  \\
+\textbf{Average in bed minutes} & 452 [414, 488] & 454 [414, 487] & 0.9 \\
+\textbf{Minutes in bed quartiles (minutes)} &  &  & 0.5 \\
+\quad Q1 (<414) & 3,299 (25\%) & 186 (26\%) &  \\
+\quad Q2 (414-452) & 3,319 (25\%) & 166 (23\%) &  \\
+\quad Q3 (453-488) & 3,292 (25\%) & 193 (27\%) &  \\
+\quad Q4 (>488) & 3,305 (25\%) & 180 (25\%) &  \\
+\textbf{Average minutes awake} & 35 [29, 42] & 32 [25, 39] & <0.001 \\
+\textbf{Minutes awake quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<29) & 3,213 (24\%) & 272 (38\%) &  \\
+\quad Q2 (29-35) & 3,306 (25\%) & 179 (25\%) &  \\
+\quad Q3 (36-42) & 3,337 (25\%) & 148 (20\%) &  \\
+\quad Q4 (>42) & 3,359 (25\%) & 126 (17\%) &  \\
+\textbf{Average minutes restless} & 1 [0, 5] & 5 [1, 11] & <0.001 \\
+\textbf{Minutes restless quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<0) & 3,396 (26\%) & 89 (12\%) &  \\
+\quad Q2 (0-1) & 3,369 (25\%) & 116 (16\%) &  \\
+\quad Q3 (2-6) & 3,291 (25\%) & 194 (27\%) &  \\
+\quad Q4 (>6) & 3,159 (24\%) & 326 (45\%) &  \\
+\textbf{Average minutes in deep sleep} & 51 [39, 63] & 47 [33, 60] & <0.001 \\
+\textbf{Minutes in deep sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<39) & 3,228 (24\%) & 257 (35\%) &  \\
+\quad Q2 (39-51) & 3,317 (25\%) & 168 (23\%) &  \\
+\quad Q3 (52-63) & 3,340 (25\%) & 145 (20\%) &  \\
+\quad Q4 (>63) & 3,330 (25\%) & 155 (21\%) &  \\
+\textbf{Average minutes in light sleep} & 246 [205, 281] & 211 [163, 261] & <0.001 \\
+\textbf{Minutes in light sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<203) & 3,164 (24\%) & 321 (44\%) &  \\
+\quad Q2 (203-245) & 3,317 (25\%) & 168 (23\%) &  \\
+\quad Q3 (246-280) & 3,362 (25\%) & 123 (17\%) &  \\
+\quad Q4 (>280) & 3,372 (26\%) & 113 (16\%) &  \\
+\textbf{Average minutes in REM sleep} & 71 [54, 86] & 65 [45, 81] & <0.001 \\
+\textbf{Minutes in REM quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<54) & 3,228 (24\%) & 257 (35\%) &  \\
+\quad Q2 (54-71) & 3,313 (25\%) & 172 (24\%) &  \\
+\quad Q3 (72-86) & 3,332 (25\%) & 153 (21\%) &  \\
+\quad Q4 (>86) & 3,342 (25\%) & 143 (20\%) &  \\
+\textbf{Sleep efficiency} & 0.913 [0.899, 0.925] & 0.914 [0.901, 0.926] & 0.2 \\
+\textbf{Sleep efficiency quartiles (\%)} &  &  & 0.5 \\
+\quad Q1 (<90) & 3,320 (25\%) & 165 (23\%) &  \\
+\quad Q2 (90-91) & 3,297 (25\%) & 188 (26\%) &  \\
+\quad Q3 (92-93) & 3,303 (25\%) & 182 (25\%) &  \\
+\quad Q4 (>93) & 3,295 (25\%) & 190 (26\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Sleep cohort, oesophagitis. From \code{sleep\_esophagitis\_table2.csv}.}\label{tab:appM-t2-sleep-esophagitis}\\
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 13,776} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 13,776} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid nights} & 587 [366, 1,261] & 1,091 [530, 1,724] & <0.001 \\
+\textbf{Average sleeping minutes} & 411 [376, 445] & 413 [376, 441] & >0.9 \\
+\textbf{Minutes asleep quartiles (minutes)} &  &  & 0.8 \\
+\quad Q1 (<376) & 3,443 (25\%) & 42 (26\%) &  \\
+\quad Q2 (376-411) & 3,447 (25\%) & 38 (23\%) &  \\
+\quad Q3 (412-445) & 3,439 (25\%) & 46 (28\%) &  \\
+\quad Q4 (>445) & 3,447 (25\%) & 38 (23\%) &  \\
+\textbf{Average in bed minutes} & 452 [414, 487] & 455 [412, 488] & 0.8 \\
+\textbf{Minutes in bed quartiles (minutes)} &  &  & 0.7 \\
+\quad Q1 (<414) & 3,440 (25\%) & 45 (27\%) &  \\
+\quad Q2 (414-452) & 3,450 (25\%) & 35 (21\%) &  \\
+\quad Q3 (453-488) & 3,445 (25\%) & 40 (24\%) &  \\
+\quad Q4 (>488) & 3,441 (25\%) & 44 (27\%) &  \\
+\textbf{Average minutes awake} & 35 [29, 42] & 32 [24, 42] & 0.003 \\
+\textbf{Minutes awake quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<29) & 3,423 (25\%) & 62 (38\%) &  \\
+\quad Q2 (29-35) & 3,448 (25\%) & 37 (23\%) &  \\
+\quad Q3 (36-42) & 3,458 (25\%) & 27 (16\%) &  \\
+\quad Q4 (>42) & 3,447 (25\%) & 38 (23\%) &  \\
+\textbf{Average minutes restless} & 1 [0, 6] & 3 [1, 13] & 0.001 \\
+\textbf{Minutes restless quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<0) & 3,459 (25\%) & 26 (16\%) &  \\
+\quad Q2 (0-1) & 3,449 (25\%) & 36 (22\%) &  \\
+\quad Q3 (2-6) & 3,455 (25\%) & 30 (18\%) &  \\
+\quad Q4 (>6) & 3,413 (25\%) & 72 (44\%) &  \\
+\textbf{Average minutes in deep sleep} & 51 [39, 63] & 44 [29, 58] & <0.001 \\
+\textbf{Minutes in deep sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<39) & 3,416 (25\%) & 69 (42\%) &  \\
+\quad Q2 (39-51) & 3,451 (25\%) & 34 (21\%) &  \\
+\quad Q3 (52-63) & 3,451 (25\%) & 34 (21\%) &  \\
+\quad Q4 (>63) & 3,458 (25\%) & 27 (16\%) &  \\
+\textbf{Average minutes in light sleep} & 245 [204, 280] & 219 [158, 272] & <0.001 \\
+\textbf{Minutes in light sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<203) & 3,414 (25\%) & 71 (43\%) &  \\
+\quad Q2 (203-245) & 3,456 (25\%) & 29 (18\%) &  \\
+\quad Q3 (246-280) & 3,453 (25\%) & 32 (20\%) &  \\
+\quad Q4 (>280) & 3,453 (25\%) & 32 (20\%) &  \\
+\textbf{Average minutes in REM sleep} & 71 [54, 86] & 60 [41, 81] & <0.001 \\
+\textbf{Minutes in REM quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<54) & 3,411 (25\%) & 74 (45\%) &  \\
+\quad Q2 (54-71) & 3,454 (25\%) & 31 (19\%) &  \\
+\quad Q3 (72-86) & 3,455 (25\%) & 30 (18\%) &  \\
+\quad Q4 (>86) & 3,456 (25\%) & 29 (18\%) &  \\
+\textbf{Sleep efficiency} & 0.913 [0.899, 0.925] & 0.912 [0.901, 0.926] & 0.3 \\
+\textbf{Sleep efficiency quartiles (\%)} &  &  & 0.3 \\
+\quad Q1 (<90) & 3,451 (25\%) & 34 (21\%) &  \\
+\quad Q2 (90-91) & 3,435 (25\%) & 50 (30\%) &  \\
+\quad Q3 (92-93) & 3,447 (25\%) & 38 (23\%) &  \\
+\quad Q4 (>93) & 3,443 (25\%) & 42 (26\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Activity cohort, GERD. From \code{activity\_gerd\_any\_table2.csv}.}\label{tab:appM-t2-activity-gerd-any}\\
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 20,707} & \textbf{GERD     N = 1,023} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 20,707} & \textbf{GERD     N = 1,023} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid days} & 431 [219, 936] & 875 [387, 1,719] & <0.001 \\
+\textbf{Average daily steps} & 5,963 [3,997, 8,193] & 6,357 [4,630, 8,474] & <0.001 \\
+\textbf{Daily steps quartiles (steps)} &  &  & <0.001 \\
+\quad Q1 (<4,027) & 5,249 (25\%) & 184 (18\%) &  \\
+\quad Q2 (4,027-5,987) & 5,161 (25\%) & 272 (27\%) &  \\
+\quad Q3 (5,988-8,210) & 5,150 (25\%) & 282 (28\%) &  \\
+\quad Q4 (>8,210) & 5,147 (25\%) & 285 (28\%) &  \\
+\textbf{Average lightly active minutes} & 45 [19, 128] & 130 [46, 267] & <0.001 \\
+\textbf{Lightly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<19) & 5,307 (26\%) & 126 (12\%) &  \\
+\quad Q2 (19-46) & 5,302 (26\%) & 131 (13\%) &  \\
+\quad Q3 (47-136) & 5,162 (25\%) & 270 (26\%) &  \\
+\quad Q4 (>136) & 4,936 (24\%) & 496 (48\%) &  \\
+\textbf{Average fairly active minutes} & 3 [1, 10] & 6 [2, 15] & <0.001 \\
+\textbf{Fairly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 5,256 (25\%) & 177 (17\%) &  \\
+\quad Q2 (1-4) & 5,237 (25\%) & 196 (19\%) &  \\
+\quad Q3 (5-10) & 5,158 (25\%) & 274 (27\%) &  \\
+\quad Q4 (>10) & 5,056 (24\%) & 376 (37\%) &  \\
+\textbf{Average very active minutes} & 3 [1, 10] & 6 [2, 15] & <0.001 \\
+\textbf{Very active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 5,256 (25\%) & 177 (17\%) &  \\
+\quad Q2 (1-4) & 5,237 (25\%) & 196 (19\%) &  \\
+\quad Q3 (5-10) & 5,158 (25\%) & 274 (27\%) &  \\
+\quad Q4 (>10) & 5,056 (24\%) & 376 (37\%) &  \\
+\textbf{Average total active minutes} & 50 [21, 140] & 140 [51, 286] & <0.001 \\
+\textbf{Total active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<21) & 5,305 (26\%) & 128 (13\%) &  \\
+\quad Q2 (21-52) & 5,297 (26\%) & 136 (13\%) &  \\
+\quad Q3 (53-149) & 5,166 (25\%) & 266 (26\%) &  \\
+\quad Q4 (>149) & 4,939 (24\%) & 493 (48\%) &  \\
+\textbf{Average sedentary minutes} & 1,385 [1,215, 1,418] & 1,209 [1,011, 1,373] & <0.001 \\
+\textbf{Sedentary minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1,201) & 4,934 (24\%) & 499 (49\%) &  \\
+\quad Q2 (1,201-1,382) & 5,149 (25\%) & 284 (28\%) &  \\
+\quad Q3 (1,383-1,418) & 5,311 (26\%) & 121 (12\%) &  \\
+\quad Q4 (>1,418) & 5,313 (26\%) & 119 (12\%) &  \\
+\textbf{Average maximum daily heart rate} &  &  &  \\
+\quad 220 & 20,707 (100\%) & 1,023 (100\%) &  \\
+\textbf{Maximum daily heart rate quartiles (bpm)} &  &  & <0.001 \\
+\quad Q1 (<220) & 5,134 (25\%) & 299 (29\%) &  \\
+\quad Q2 (220-220) & 5,144 (25\%) & 289 (28\%) &  \\
+\quad Q3 (221-220) & 5,197 (25\%) & 235 (23\%) &  \\
+\quad Q4 (>220) & 5,232 (25\%) & 200 (20\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Activity cohort, oesophagitis. From \code{activity\_esophagitis\_table2.csv}.}\label{tab:appM-t2-activity-esophagitis}\\
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 21,486} & \textbf{Oesophagitis     N = 244} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 21,486} & \textbf{Oesophagitis     N = 244} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid days} & 437 [223, 970] & 893 [387, 1,588] & <0.001 \\
+\textbf{Average daily steps} & 5,982 [4,019, 8,204] & 6,404 [4,704, 8,659] & 0.021 \\
+\textbf{Daily steps quartiles (steps)} &  &  & 0.029 \\
+\quad Q1 (<4,027) & 5,391 (25\%) & 42 (17\%) &  \\
+\quad Q2 (4,027-5,987) & 5,364 (25\%) & 69 (28\%) &  \\
+\quad Q3 (5,988-8,210) & 5,371 (25\%) & 61 (25\%) &  \\
+\quad Q4 (>8,210) & 5,360 (25\%) & 72 (30\%) &  \\
+\textbf{Average lightly active minutes} & 46 [19, 134] & 128 [47, 255] & <0.001 \\
+\textbf{Lightly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<19) & 5,409 (25\%) & 24 (9.8\%) &  \\
+\quad Q2 (19-46) & 5,397 (25\%) & 36 (15\%) &  \\
+\quad Q3 (47-136) & 5,366 (25\%) & 66 (27\%) &  \\
+\quad Q4 (>136) & 5,314 (25\%) & 118 (48\%) &  \\
+\textbf{Average fairly active minutes} & 3 [1, 10] & 7 [2, 14] & 0.010 \\
+\textbf{Fairly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 5,401 (25\%) & 32 (13\%) &  \\
+\quad Q2 (1-4) & 5,385 (25\%) & 48 (20\%) &  \\
+\quad Q3 (5-10) & 5,359 (25\%) & 73 (30\%) &  \\
+\quad Q4 (>10) & 5,341 (25\%) & 91 (37\%) &  \\
+\textbf{Average very active minutes} & 3 [1, 10] & 7 [2, 14] & 0.010 \\
+\textbf{Very active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 5,401 (25\%) & 32 (13\%) &  \\
+\quad Q2 (1-4) & 5,385 (25\%) & 48 (20\%) &  \\
+\quad Q3 (5-10) & 5,359 (25\%) & 73 (30\%) &  \\
+\quad Q4 (>10) & 5,341 (25\%) & 91 (37\%) &  \\
+\textbf{Average total active minutes} & 52 [21, 147] & 140 [52, 269] & <0.001 \\
+\textbf{Total active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<21) & 5,409 (25\%) & 24 (9.8\%) &  \\
+\quad Q2 (21-52) & 5,396 (25\%) & 37 (15\%) &  \\
+\quad Q3 (53-149) & 5,362 (25\%) & 70 (29\%) &  \\
+\quad Q4 (>149) & 5,319 (25\%) & 113 (46\%) &  \\
+\textbf{Average sedentary minutes} & 1,383 [1,204, 1,418] & 1,219 [1,001, 1,378] & <0.001 \\
+\textbf{Sedentary minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1,201) & 5,318 (25\%) & 115 (47\%) &  \\
+\quad Q2 (1,201-1,382) & 5,361 (25\%) & 72 (30\%) &  \\
+\quad Q3 (1,383-1,418) & 5,397 (25\%) & 35 (14\%) &  \\
+\quad Q4 (>1,418) & 5,410 (25\%) & 22 (9.0\%) &  \\
+\textbf{Average maximum daily heart rate} &  &  &  \\
+\quad 220 & 21,486 (100\%) & 244 (100\%) &  \\
+\textbf{Maximum daily heart rate quartiles (bpm)} &  &  & 0.068 \\
+\quad Q1 (<220) & 5,374 (25\%) & 59 (24\%) &  \\
+\quad Q2 (220-220) & 5,356 (25\%) & 77 (32\%) &  \\
+\quad Q3 (221-220) & 5,384 (25\%) & 48 (20\%) &  \\
+\quad Q4 (>220) & 5,372 (25\%) & 60 (25\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Combined cohort, GERD. From \code{combined\_gerd\_any\_table2.csv}.}\label{tab:appM-t2-combined-gerd-any}\\
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 13,160} & \textbf{GERD     N = 718} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No GERD     N = 13,160} & \textbf{GERD     N = 718} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid nights} & 571 [363, 1,224] & 1,178 [564, 1,925] & <0.001 \\
+\textbf{Average sleeping minutes} & 411 [376, 445] & 413 [375, 443] & 0.8 \\
+\textbf{Minutes asleep quartiles (minutes)} &  &  & 0.14 \\
+\quad Q1 (<376) & 3,286 (25\%) & 184 (26\%) &  \\
+\quad Q2 (376-411) & 3,309 (25\%) & 161 (22\%) &  \\
+\quad Q3 (412-445) & 3,267 (25\%) & 202 (28\%) &  \\
+\quad Q4 (>445) & 3,298 (25\%) & 171 (24\%) &  \\
+\textbf{Average in bed minutes} & 452 [414, 488] & 454 [413, 487] & 0.9 \\
+\textbf{Minutes in bed quartiles (minutes)} &  &  & 0.4 \\
+\quad Q1 (<414) & 3,285 (25\%) & 185 (26\%) &  \\
+\quad Q2 (414-452) & 3,308 (25\%) & 162 (23\%) &  \\
+\quad Q3 (453-488) & 3,277 (25\%) & 192 (27\%) &  \\
+\quad Q4 (>488) & 3,290 (25\%) & 179 (25\%) &  \\
+\textbf{Average minutes awake} & 36 [29, 43] & 32 [25, 39] & <0.001 \\
+\textbf{Minutes awake quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<29) & 3,200 (24\%) & 270 (38\%) &  \\
+\quad Q2 (29-35) & 3,293 (25\%) & 177 (25\%) &  \\
+\quad Q3 (36-42) & 3,324 (25\%) & 145 (20\%) &  \\
+\quad Q4 (>42) & 3,343 (25\%) & 126 (18\%) &  \\
+\textbf{Average minutes restless} & 1 [0, 5] & 5 [1, 11] & <0.001 \\
+\textbf{Minutes restless quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<0) & 3,381 (26\%) & 89 (12\%) &  \\
+\quad Q2 (0-1) & 3,355 (25\%) & 115 (16\%) &  \\
+\quad Q3 (2-6) & 3,278 (25\%) & 191 (27\%) &  \\
+\quad Q4 (>6) & 3,146 (24\%) & 323 (45\%) &  \\
+\textbf{Average minutes in deep sleep} & 51 [39, 63] & 48 [33, 61] & <0.001 \\
+\textbf{Minutes in deep sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<39) & 3,216 (24\%) & 254 (35\%) &  \\
+\quad Q2 (39-51) & 3,303 (25\%) & 167 (23\%) &  \\
+\quad Q3 (52-63) & 3,326 (25\%) & 143 (20\%) &  \\
+\quad Q4 (>63) & 3,315 (25\%) & 154 (21\%) &  \\
+\textbf{Average minutes in light sleep} & 246 [206, 281] & 212 [164, 261] & <0.001 \\
+\textbf{Minutes in light sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<204) & 3,151 (24\%) & 319 (44\%) &  \\
+\quad Q2 (204-245) & 3,305 (25\%) & 165 (23\%) &  \\
+\quad Q3 (246-280) & 3,346 (25\%) & 123 (17\%) &  \\
+\quad Q4 (>280) & 3,358 (26\%) & 111 (15\%) &  \\
+\textbf{Average minutes in REM sleep} & 71 [54, 86] & 65 [46, 82] & <0.001 \\
+\textbf{Minutes in REM quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<54) & 3,217 (24\%) & 253 (35\%) &  \\
+\quad Q2 (54-71) & 3,300 (25\%) & 170 (24\%) &  \\
+\quad Q3 (72-86) & 3,315 (25\%) & 154 (21\%) &  \\
+\quad Q4 (>86) & 3,328 (25\%) & 141 (20\%) &  \\
+\textbf{Sleep efficiency} & 0.913 [0.899, 0.925] & 0.914 [0.901, 0.926] & 0.3 \\
+\textbf{Sleep efficiency quartiles (\%)} &  &  & 0.6 \\
+\quad Q1 (<90) & 3,306 (25\%) & 164 (23\%) &  \\
+\quad Q2 (90-91) & 3,285 (25\%) & 185 (26\%) &  \\
+\quad Q3 (92-93) & 3,288 (25\%) & 181 (25\%) &  \\
+\quad Q4 (>93) & 3,281 (25\%) & 188 (26\%) &  \\
+\textbf{Average daily steps} & 6,277 [4,327, 8,492] & 6,652 [4,772, 8,720] & 0.006 \\
+\textbf{Daily steps quartiles (steps)} &  &  & 0.002 \\
+\quad Q1 (<4,351) & 3,333 (25\%) & 137 (19\%) &  \\
+\quad Q2 (4,351-6,294) & 3,281 (25\%) & 189 (26\%) &  \\
+\quad Q3 (6,295-8,506) & 3,272 (25\%) & 197 (27\%) &  \\
+\quad Q4 (>8,506) & 3,274 (25\%) & 195 (27\%) &  \\
+\textbf{Average lightly active minutes} & 54 [23, 153] & 130 [50, 255] & <0.001 \\
+\textbf{Lightly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<24) & 3,375 (26\%) & 95 (13\%) &  \\
+\quad Q2 (24-57) & 3,367 (26\%) & 103 (14\%) &  \\
+\quad Q3 (58-160) & 3,252 (25\%) & 217 (30\%) &  \\
+\quad Q4 (>160) & 3,166 (24\%) & 303 (42\%) &  \\
+\textbf{Average fairly active minutes} & 4 [1, 11] & 6 [2, 15] & <0.001 \\
+\textbf{Fairly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 3,342 (25\%) & 128 (18\%) &  \\
+\quad Q2 (1-4) & 3,313 (25\%) & 157 (22\%) &  \\
+\quad Q3 (5-11) & 3,280 (25\%) & 189 (26\%) &  \\
+\quad Q4 (>11) & 3,225 (25\%) & 244 (34\%) &  \\
+\textbf{Average very active minutes} & 4 [1, 11] & 6 [2, 15] & <0.001 \\
+\textbf{Very active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 3,342 (25\%) & 128 (18\%) &  \\
+\quad Q2 (1-4) & 3,313 (25\%) & 157 (22\%) &  \\
+\quad Q3 (5-11) & 3,280 (25\%) & 189 (26\%) &  \\
+\quad Q4 (>11) & 3,225 (25\%) & 244 (34\%) &  \\
+\textbf{Average total active minutes} & 62 [26, 165] & 142 [55, 269] & <0.001 \\
+\textbf{Total active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<26) & 3,371 (26\%) & 99 (14\%) &  \\
+\quad Q2 (26-64) & 3,367 (26\%) & 103 (14\%) &  \\
+\quad Q3 (65-173) & 3,254 (25\%) & 215 (30\%) &  \\
+\quad Q4 (>173) & 3,168 (24\%) & 301 (42\%) &  \\
+\textbf{Average sedentary minutes} & 1,367 [1,194, 1,413] & 1,232 [1,069, 1,360] & <0.001 \\
+\textbf{Sedentary minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1,184) & 3,163 (24\%) & 307 (43\%) &  \\
+\quad Q2 (1,184-1,362) & 3,234 (25\%) & 236 (33\%) &  \\
+\quad Q3 (1,363-1,412) & 3,383 (26\%) & 86 (12\%) &  \\
+\quad Q4 (>1,412) & 3,380 (26\%) & 89 (12\%) &  \\
+\textbf{Average maximum daily heart rate} &  &  &  \\
+\quad 220 & 13,160 (100\%) & 718 (100\%) &  \\
+\textbf{Maximum daily heart rate quartiles (bpm)} &  &  & 0.001 \\
+\quad Q1 (<220) & 3,252 (25\%) & 218 (30\%) &  \\
+\quad Q2 (220-220) & 3,287 (25\%) & 183 (25\%) &  \\
+\quad Q3 (221-220) & 3,297 (25\%) & 172 (24\%) &  \\
+\quad Q4 (>220) & 3,324 (25\%) & 145 (20\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
+\caption{Exposure distributions by case status --- Combined cohort, oesophagitis. From \code{combined\_esophagitis\_table2.csv}.}\label{tab:appM-t2-combined-esophagitis}\\
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 13,714} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endfirsthead
+\toprule \textbf{Exposure} & \textbf{No oesophagitis     N = 13,714} & \textbf{Oesophagitis     N = 164} & \textbf{$p$} \\ \midrule \endhead
+\textbf{Number of valid nights} & 588 [367, 1,264] & 1,091 [530, 1,724] & <0.001 \\
+\textbf{Average sleeping minutes} & 411 [376, 445] & 413 [376, 441] & >0.9 \\
+\textbf{Minutes asleep quartiles (minutes)} &  &  & 0.8 \\
+\quad Q1 (<376) & 3,428 (25\%) & 42 (26\%) &  \\
+\quad Q2 (376-411) & 3,432 (25\%) & 38 (23\%) &  \\
+\quad Q3 (412-445) & 3,423 (25\%) & 46 (28\%) &  \\
+\quad Q4 (>445) & 3,431 (25\%) & 38 (23\%) &  \\
+\textbf{Average in bed minutes} & 452 [414, 488] & 455 [412, 488] & 0.8 \\
+\textbf{Minutes in bed quartiles (minutes)} &  &  & 0.7 \\
+\quad Q1 (<414) & 3,425 (25\%) & 45 (27\%) &  \\
+\quad Q2 (414-452) & 3,435 (25\%) & 35 (21\%) &  \\
+\quad Q3 (453-488) & 3,429 (25\%) & 40 (24\%) &  \\
+\quad Q4 (>488) & 3,425 (25\%) & 44 (27\%) &  \\
+\textbf{Average minutes awake} & 35 [29, 42] & 32 [24, 42] & 0.002 \\
+\textbf{Minutes awake quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<29) & 3,408 (25\%) & 62 (38\%) &  \\
+\quad Q2 (29-35) & 3,433 (25\%) & 37 (23\%) &  \\
+\quad Q3 (36-42) & 3,442 (25\%) & 27 (16\%) &  \\
+\quad Q4 (>42) & 3,431 (25\%) & 38 (23\%) &  \\
+\textbf{Average minutes restless} & 1 [0, 6] & 3 [1, 13] & 0.001 \\
+\textbf{Minutes restless quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<0) & 3,444 (25\%) & 26 (16\%) &  \\
+\quad Q2 (0-1) & 3,434 (25\%) & 36 (22\%) &  \\
+\quad Q3 (2-6) & 3,439 (25\%) & 30 (18\%) &  \\
+\quad Q4 (>6) & 3,397 (25\%) & 72 (44\%) &  \\
+\textbf{Average minutes in deep sleep} & 51 [39, 63] & 44 [29, 58] & <0.001 \\
+\textbf{Minutes in deep sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<39) & 3,401 (25\%) & 69 (42\%) &  \\
+\quad Q2 (39-51) & 3,436 (25\%) & 34 (21\%) &  \\
+\quad Q3 (52-63) & 3,435 (25\%) & 34 (21\%) &  \\
+\quad Q4 (>63) & 3,442 (25\%) & 27 (16\%) &  \\
+\textbf{Average minutes in light sleep} & 245 [204, 280] & 219 [158, 272] & <0.001 \\
+\textbf{Minutes in light sleep quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<204) & 3,399 (25\%) & 71 (43\%) &  \\
+\quad Q2 (204-245) & 3,441 (25\%) & 29 (18\%) &  \\
+\quad Q3 (246-280) & 3,436 (25\%) & 33 (20\%) &  \\
+\quad Q4 (>280) & 3,438 (25\%) & 31 (19\%) &  \\
+\textbf{Average minutes in REM sleep} & 71 [54, 86] & 60 [41, 81] & <0.001 \\
+\textbf{Minutes in REM quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<54) & 3,396 (25\%) & 74 (45\%) &  \\
+\quad Q2 (54-71) & 3,439 (25\%) & 31 (19\%) &  \\
+\quad Q3 (72-86) & 3,439 (25\%) & 30 (18\%) &  \\
+\quad Q4 (>86) & 3,440 (25\%) & 29 (18\%) &  \\
+\textbf{Sleep efficiency} & 0.913 [0.899, 0.925] & 0.912 [0.901, 0.926] & 0.3 \\
+\textbf{Sleep efficiency quartiles (\%)} &  &  & 0.3 \\
+\quad Q1 (<90) & 3,436 (25\%) & 34 (21\%) &  \\
+\quad Q2 (90-91) & 3,420 (25\%) & 50 (30\%) &  \\
+\quad Q3 (92-93) & 3,431 (25\%) & 38 (23\%) &  \\
+\quad Q4 (>93) & 3,427 (25\%) & 42 (26\%) &  \\
+\textbf{Average daily steps} & 6,287 [4,345, 8,500] & 6,972 [4,928, 8,877] & 0.030 \\
+\textbf{Daily steps quartiles (steps)} &  &  & 0.12 \\
+\quad Q1 (<4,351) & 3,441 (25\%) & 29 (18\%) &  \\
+\quad Q2 (4,351-6,294) & 3,429 (25\%) & 41 (25\%) &  \\
+\quad Q3 (6,295-8,506) & 3,425 (25\%) & 44 (27\%) &  \\
+\quad Q4 (>8,506) & 3,419 (25\%) & 50 (30\%) &  \\
+\textbf{Average lightly active minutes} & 56 [23, 159] & 127 [48, 249] & <0.001 \\
+\textbf{Lightly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<24) & 3,448 (25\%) & 22 (13\%) &  \\
+\quad Q2 (24-57) & 3,443 (25\%) & 27 (16\%) &  \\
+\quad Q3 (58-160) & 3,418 (25\%) & 51 (31\%) &  \\
+\quad Q4 (>160) & 3,405 (25\%) & 64 (39\%) &  \\
+\textbf{Average fairly active minutes} & 4 [1, 11] & 8 [3, 14] & 0.2 \\
+\textbf{Fairly active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 3,445 (25\%) & 25 (15\%) &  \\
+\quad Q2 (1-4) & 3,441 (25\%) & 29 (18\%) &  \\
+\quad Q3 (5-11) & 3,410 (25\%) & 59 (36\%) &  \\
+\quad Q4 (>11) & 3,418 (25\%) & 51 (31\%) &  \\
+\textbf{Average very active minutes} & 4 [1, 11] & 8 [3, 14] & 0.2 \\
+\textbf{Very active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1) & 3,445 (25\%) & 25 (15\%) &  \\
+\quad Q2 (1-4) & 3,441 (25\%) & 29 (18\%) &  \\
+\quad Q3 (5-11) & 3,410 (25\%) & 59 (36\%) &  \\
+\quad Q4 (>11) & 3,418 (25\%) & 51 (31\%) &  \\
+\textbf{Average total active minutes} & 64 [26, 172] & 140 [52, 267] & <0.001 \\
+\textbf{Total active minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<26) & 3,447 (25\%) & 23 (14\%) &  \\
+\quad Q2 (26-64) & 3,444 (25\%) & 26 (16\%) &  \\
+\quad Q3 (65-173) & 3,418 (25\%) & 51 (31\%) &  \\
+\quad Q4 (>173) & 3,405 (25\%) & 64 (39\%) &  \\
+\textbf{Average sedentary minutes} & 1,364 [1,186, 1,412] & 1,246 [1,065, 1,373] & <0.001 \\
+\textbf{Sedentary minutes quartiles (minutes)} &  &  & <0.001 \\
+\quad Q1 (<1,184) & 3,404 (25\%) & 66 (40\%) &  \\
+\quad Q2 (1,184-1,362) & 3,416 (25\%) & 54 (33\%) &  \\
+\quad Q3 (1,363-1,412) & 3,445 (25\%) & 24 (15\%) &  \\
+\quad Q4 (>1,412) & 3,449 (25\%) & 20 (12\%) &  \\
+\textbf{Average maximum daily heart rate} &  &  &  \\
+\quad 220 & 13,714 (100\%) & 164 (100\%) &  \\
+\textbf{Maximum daily heart rate quartiles (bpm)} &  &  & 0.2 \\
+\quad Q1 (<220) & 3,435 (25\%) & 35 (21\%) &  \\
+\quad Q2 (220-220) & 3,422 (25\%) & 48 (29\%) &  \\
+\quad Q3 (221-220) & 3,435 (25\%) & 34 (21\%) &  \\
+\quad Q4 (>220) & 3,422 (25\%) & 47 (29\%) &  \\
+\bottomrule \end{longtable}\normalsize
+\subsection{Quartile boundaries, combined cohort}
+\begin{table}[h]\centering\footnotesize\begin{tabular}{@{}llrrrrr@{}}\toprule
+\textbf{Exposure} & \textbf{Unit} & \textbf{Min} & \textbf{P25} & \textbf{Median} & \textbf{P75} & \textbf{Max} \\ \midrule
+\code{avg\_min\_asleep} & minutes & 275.5 &   376 & 411.1 & 444.7 &   851 \\
+\code{avg\_min\_in\_bed} & minutes & 303.7 & 414.3 & 452.2 & 487.5 &   930 \\
+\code{avg\_min\_awake} & minutes & 0.6305 & 28.68 & 35.35 & 42.38 & 104.7 \\
+\code{avg\_min\_restless} & minutes & 0 & 0.4003 & 1.416 & 5.647 & 215.3 \\
+\code{avg\_min\_deep} & minutes & 0 & 39.16 & 50.99 & 62.78 & 122.4 \\
+\code{avg\_min\_light} & minutes & 0 & 203.6 &   245 & 280.1 & 544.5 \\
+\code{avg\_min\_rem} & minutes & 0 & 53.99 & 70.63 &  86.1 & 174.2 \\
+\code{avg\_sleep\_efficiency} & \% & 58.45 & 89.94 & 91.32 &  92.5 & 99.76 \\
+\code{avg\_daily\_steps} & steps & 185.8 & 4,351 & 6,294 & 8,506 & 25,937 \\
+\code{avg\_lightly\_active\_min} & minutes & 0 &  23.6 & 56.86 & 159.9 & 1,256 \\
+\code{avg\_fairly\_active\_min} & minutes & 0 & 1.493 & 4.272 & 11.49 & 473.8 \\
+\code{avg\_very\_active\_min} & minutes & 0 & 1.493 & 4.272 & 11.49 & 473.8 \\
+\code{avg\_total\_active\_min} & minutes & 0 &  26.4 & 64.41 & 173.5 & 1,363 \\
+\code{avg\_sedentary\_min} & minutes & 4.254 & 1,184 & 1,362 & 1,412 & 1,440 \\
+\code{avg\_daily\_max\_hr\_minute\_all\_days} & bpm &   220 &   220 &   220 &   220 &   220 \\
+\bottomrule\end{tabular}\caption{Quartile boundaries, combined cohort.}\label{tab:appM-cut}\end{table}
+\subsection{Complete quartile-versus-spline comparison}
+\footnotesize\begin{longtable}{@{}p{2.0cm}p{3.4cm}p{2.4cm}rr p{3.2cm}@{}}
+\caption{All 56 exposure--outcome pairs from the three \code{quartile\_vs\_spline.csv} files.}\label{tab:appM-qvs}\\
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{$\Delta$AIC} & \textbf{CI ratio} & \textbf{Verdict} \\ \midrule \endfirsthead
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{$\Delta$AIC} & \textbf{CI ratio} & \textbf{Verdict} \\ \midrule \endhead
+sleep & \code{avg\_min\_asleep} & gerd\_any & 1.5 & 0.85 & agree - neither finds an association \\
+sleep & \code{avg\_min\_in\_bed} & gerd\_any & -1.2 & 0.85 & agree - neither finds an association \\
+sleep & \code{avg\_min\_awake} & gerd\_any & -7.0 & 0.82 & agree; spline more precise \\
+sleep & \code{avg\_min\_restless} & gerd\_any & -13.8 & 0.93 & SPLINE ADDS: relationship is non-linear \\
+sleep & \code{avg\_min\_deep} & gerd\_any & -4.4 & 0.84 & agree; spline more precise \\
+sleep & \code{avg\_min\_light} & gerd\_any & -9.6 & 0.96 & SPLINE ADDS: relationship is non-linear \\
+sleep & \code{avg\_min\_rem} & gerd\_any & -8.5 & 0.87 & agree; spline more precise \\
+sleep & \code{avg\_sleep\_efficiency} & gerd\_any & -3.8 & 0.96 & agree - neither finds an association \\
+sleep & \code{avg\_min\_asleep} & esophagitis & -1.4 & 0.86 & agree - neither finds an association \\
+sleep & \code{avg\_min\_in\_bed} & esophagitis & 0.5 & 0.87 & agree - neither finds an association \\
+sleep & \code{avg\_min\_awake} & esophagitis & -7.7 & 0.77 & SPLINE ADDS: relationship is non-linear \\
+sleep & \code{avg\_min\_restless} & esophagitis & -5.1 & 1.12 & SPLINE ADDS: relationship is non-linear \\
+sleep & \code{avg\_min\_deep} & esophagitis & -3.5 & 0.86 & agree; spline more precise \\
+sleep & \code{avg\_min\_light} & esophagitis & -7.0 & 0.82 & agree; spline more precise \\
+sleep & \code{avg\_min\_rem} & esophagitis & -2.6 & 0.98 & agree - both find the same linear association \\
+sleep & \code{avg\_sleep\_efficiency} & esophagitis & 3.7 & 0.77 & agree - neither finds an association \\
+activity & \code{avg\_daily\_steps} & gerd\_any & -4.2 & 0.91 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_lightly\_active\_min} & gerd\_any & -20.7 & 0.89 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_fairly\_active\_min} & gerd\_any & -7.8 & 1.00 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_very\_active\_min} & gerd\_any & -7.8 & 1.00 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_total\_active\_min} & gerd\_any & -16.8 & 0.89 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_sedentary\_min} & gerd\_any & -31.9 & 1.00 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_daily\_steps} & esophagitis & -5.4 & 0.98 & agree - both find the same linear association \\
+activity & \code{avg\_lightly\_active\_min} & esophagitis & -4.1 & 0.80 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_fairly\_active\_min} & esophagitis & -7.9 & 0.89 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_very\_active\_min} & esophagitis & -7.9 & 0.89 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_total\_active\_min} & esophagitis & -7.9 & 0.82 & SPLINE ADDS: relationship is non-linear \\
+activity & \code{avg\_sedentary\_min} & esophagitis & -3.7 & 0.76 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_asleep} & gerd\_any & 2.2 & 0.85 & agree - neither finds an association \\
+combined & \code{avg\_min\_in\_bed} & gerd\_any & -0.5 & 0.85 & agree - neither finds an association \\
+combined & \code{avg\_min\_awake} & gerd\_any & -5.0 & 0.83 & agree; spline more precise \\
+combined & \code{avg\_min\_restless} & gerd\_any & -14.5 & 0.93 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_deep} & gerd\_any & -5.2 & 0.84 & agree; spline more precise \\
+combined & \code{avg\_min\_light} & gerd\_any & -9.0 & 0.95 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_rem} & gerd\_any & -8.8 & 0.87 & agree; spline more precise \\
+combined & \code{avg\_sleep\_efficiency} & gerd\_any & -2.3 & 0.96 & agree - neither finds an association \\
+combined & \code{avg\_daily\_steps} & gerd\_any & -7.8 & 0.97 & agree - neither finds an association \\
+combined & \code{avg\_lightly\_active\_min} & gerd\_any & -17.4 & 0.88 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_fairly\_active\_min} & gerd\_any & -2.3 & 1.00 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_very\_active\_min} & gerd\_any & -2.3 & 1.00 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_total\_active\_min} & gerd\_any & -17.0 & 0.90 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_sedentary\_min} & gerd\_any & -7.7 & 1.02 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_asleep} & esophagitis & -1.4 & 0.87 & agree - neither finds an association \\
+combined & \code{avg\_min\_in\_bed} & esophagitis & 0.5 & 0.87 & agree - neither finds an association \\
+combined & \code{avg\_min\_awake} & esophagitis & -8.1 & 0.78 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_restless} & esophagitis & -5.8 & 1.12 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_min\_deep} & esophagitis & -4.0 & 0.86 & agree; spline more precise \\
+combined & \code{avg\_min\_light} & esophagitis & -8.0 & 0.81 & agree; spline more precise \\
+combined & \code{avg\_min\_rem} & esophagitis & -4.5 & 0.98 & agree - both find the same linear association \\
+combined & \code{avg\_sleep\_efficiency} & esophagitis & 3.6 & 0.77 & agree - neither finds an association \\
+combined & \code{avg\_daily\_steps} & esophagitis & -4.8 & 0.92 & agree - neither finds an association \\
+combined & \code{avg\_lightly\_active\_min} & esophagitis & -7.9 & 0.88 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_fairly\_active\_min} & esophagitis & 1.7 & 1.07 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_very\_active\_min} & esophagitis & 1.7 & 1.07 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_total\_active\_min} & esophagitis & -7.4 & 0.88 & SPLINE ADDS: relationship is non-linear \\
+combined & \code{avg\_sedentary\_min} & esophagitis & -2.6 & 0.81 & SPLINE ADDS: relationship is non-linear \\
+\bottomrule \end{longtable}\normalsize
 
 \end{document}
