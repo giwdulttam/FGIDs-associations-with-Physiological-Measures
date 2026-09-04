@@ -2428,8 +2428,164 @@ counts under both definitions; if the post-Fitbit count is very small relative t
 that is a substantive finding about GERD ascertainment timing in this cohort and may argue for making
 the ``ever'' rule primary.
 
+\subsection{Stage 4 --- defects found in the first full run}
+\label{sec:defects-run}
+Executing the pipeline against real data surfaced three defects that synthetic testing could not,
+because each produces well-formed output. All three affect the activity arm only.
+
+\paragraph{D1. \code{avg_very_active_min} duplicates \code{avg_fairly_active_min}.}
+In the build, both are assigned \code{mean(min_cardio)}:
+\begin{quote}\ttfamily\footnotesize
+avg\_fairly\_active\_min = mean(min\_cardio, na.rm = TRUE),\\
+avg\_very\_active\_min~~ = mean(min\_cardio, na.rm = TRUE),
+\end{quote}
+They are one variable under two names, which is why their odds ratios agree to the last digit in
+every configuration. Consequences: the activity arm reports seven exposures but measures six; two
+Bonferroni tests are spent on the same quantity, making the correction slightly conservative; and
+any reader comparing the two rows would reasonably conclude the analysis is broken. The intended
+source for ``very active'' is the Fitbit \textbf{Peak} zone --- see D2.
+
+\paragraph{D2. The Peak heart-rate zone is never captured.}
+\code{hr_daily} sums \code{minute_in_zone} for \code{"cardio"}, \code{"fat burn"} and
+\code{"out of range"} only. Fitbit's fourth zone, \textbf{Peak}, is silently dropped, so the
+highest-intensity minutes are absent from every activity exposure, including
+\code{avg_total_active_min}. This is a floor effect on the most physiologically interesting end of
+the distribution.
+
+\paragraph{D3. Wear time is not adjusted for.}
+\code{GERD_ADJ_COVARS_BASE} contains no wear-time or coverage term, yet the activity exposures are
+absolute minutes per day whose magnitude depends on how many hours the device was worn. The
+antecedent published analysis treats this as first-order --- its file is named
+\textit{IBS and Activity (Controlling for Wear Time).R}. \code{avg_daily_wear_hours} is already
+built and saved by the pipeline (\code{R9_avg_wear_hours_df.rds}); it is simply not used. Until it
+is, the activity estimates in Section~\ref{sec:activity-anomaly} confound activity with adherence.
+
+\paragraph{Recommended sequence before these results are circulated.}
+Fix D1 and D2 in the build, add wear time (and, per Section~\ref{sec:verify}, a coverage term) to
+the activity adjustment set, and re-run configurations 2, 3, 5 and 6. The sleep results
+(Configurations 1 and 4) are not affected by any of the three and can be read as they stand.
+
 %======================================================================
-\section{Anticipated Results and Interpretation Framework}
+\section{Results of the First Full Run}
+\label{sec:results}
+%======================================================================
+This section reports the first execution of the complete pipeline against the real
+\textit{All of Us} export. All six configurations completed. Odds ratios are adjusted for the
+covariate set in Section~\ref{sec:covstrategy} and $p$-values are Bonferroni-corrected within
+configuration; Q1 is the reference throughout.
+
+\subsection{Cohorts realised}
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Cohort} & \textbf{Total} & \textbf{GERD} & \textbf{Oesophagitis} & \textbf{Modelled $n$} \\
+\midrule
+Sleep     & 13{,}940 & 725   & 164 & 12{,}391 \\
+Activity  & 21{,}730 & 1{,}023 & 244 & --- \\
+Combined  & 13{,}878 & 718   & 162 & --- \\
+\bottomrule
+\end{tabular}
+\caption{Realised cohort sizes. ``Modelled $n$'' is the complete-case count after covariate
+adjustment; the spline models use $n=12{,}143$.}
+\end{table}
+
+\noindent The cohorts are an order of magnitude larger than the $N=19{,}995$ IBS sleep cohort's
+case count would suggest, and share no denominator with it: they are built entirely from the new
+export.
+
+\subsection{Sleep and GERD (Configuration 1)}
+Five of eight sleep exposures survived Bonferroni correction. The direction is consistent and
+dose-responsive across quartiles:
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Exposure (Q4 vs Q1)} & \textbf{aOR} & \textbf{95\% CI} & \textbf{$p_{\text{adj}}$} \\
+\midrule
+Minutes restless      & 3.41 & 2.66--4.43 & $1.1\times10^{-19}$ \\
+Minutes awake         & 0.53 & 0.41--0.67 & $6.5\times10^{-6}$ \\
+Minutes deep sleep    & 0.50 & 0.40--0.63 & $8.9\times10^{-8}$ \\
+Minutes REM           & 0.48 & 0.38--0.61 & $1.6\times10^{-8}$ \\
+Minutes light sleep   & 0.39 & 0.31--0.50 & $1.6\times10^{-12}$ \\
+\midrule
+Minutes asleep        & 0.91 & 0.71--1.15 & $1.00$ \\
+Minutes in bed        & 0.99 & 0.78--1.24 & $1.00$ \\
+Sleep efficiency      & 0.96 & 0.76--1.23 & $1.00$ \\
+\bottomrule
+\end{tabular}
+\caption{Sleep exposures and GERD, highest versus lowest quartile.}
+\end{table}
+
+\noindent Restless minutes carry the strongest association in the entire study. Total sleep
+duration, time in bed and sleep efficiency show no association at all --- the signal is in sleep
+\emph{architecture and fragmentation}, not sleep \emph{quantity}. That is a substantive finding
+and it is consistent across the sleep and combined cohorts.
+
+\subsection{Oesophagitis (Configurations 4--6)}
+With 164 sleep and 244 activity cases the same directions persist with wider intervals: restless
+Q4 aOR $2.73$ ($1.72$--$4.46$), light sleep Q4 $0.41$ ($0.26$--$0.65$), REM Q4 $0.41$
+($0.25$--$0.64$). The stricter phenotype therefore does not contradict the broad one. Events per
+variable fall to $\approx 5.5$--$6.1$ in the spline models, which the pipeline flags as
+\code{UNSTABLE}; those rows should be read as directional, not precise.
+
+\subsection{Activity (Configurations 2, 3, 5, 6) --- direction contrary to hypothesis}
+\label{sec:activity-anomaly}
+The activity results run \emph{opposite} to the pre-specified hypothesis and are large:
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Exposure (Q4 vs Q1)} & \textbf{aOR} & \textbf{95\% CI} & \textbf{$p_{\text{adj}}$} \\
+\midrule
+Lightly active minutes & 4.16 & 3.35--5.20 & $2.2\times10^{-35}$ \\
+Total active minutes   & 4.08 & 3.29--5.11 & $7.7\times10^{-35}$ \\
+Fairly active minutes  & 2.81 & 2.27--3.50 & $2.2\times10^{-19}$ \\
+Very active minutes    & 2.81 & 2.27--3.50 & $2.2\times10^{-19}$ \\
+Sedentary minutes      & 0.23 & 0.18--0.29 & $3.3\times10^{-36}$ \\
+\bottomrule
+\end{tabular}
+\caption{Activity exposures and GERD. More activity predicts \emph{higher} odds and more
+sedentary time \emph{lower} odds --- the reverse of the hypothesis.}
+\end{table}
+
+\noindent \textbf{These estimates should not be interpreted biologically as they stand.} Three
+defects documented in Section~\ref{sec:defects-run} bear directly on them, and the
+``fairly active'' and ``very active'' rows above are numerically identical because they are the
+same variable computed twice. The activity exposures are absolute minutes per day derived from
+heart-rate zones, so they scale with how long the device was worn; wear time is not in the
+adjustment set; and GERD cases contribute far more valid days than non-cases
+(1{,}166 [556, 1{,}920] nights versus 569 [363, 1{,}223], a $2.1\times$ gap in the sleep cohort
+and $\approx 4.6\times$ in the activity cohort). A gradient in recorded active minutes is exactly
+what differential wear would produce. The sleep findings are far less exposed to this, because
+sleep-stage exposures are per-night proportions of a night rather than accumulating totals.
+
+\subsection{Spline analysis and the quartile comparison}
+The restricted-cubic-spline models agree with the quartile models on direction everywhere and
+sharpen them in places. Across the sleep cohort's 16 exposure--outcome pairs: 4 showed genuine
+non-linearity, 5 agreed with the quartile result but with narrower intervals, 6 found no
+association under either method, and 1 agreed on a linear association. Restless minutes and light
+sleep are the two clearly non-linear sleep relationships
+($p_{\text{non-linear}} = 2.8\times10^{-14}$ and $2.2\times10^{-3}$).
+
+In the activity cohort 11 of 12 pairs were flagged \code{SPLINE ADDS: relationship is non-linear}.
+Read against Section~\ref{sec:activity-anomaly} this is more likely to reflect the wear-time
+gradient than a biological dose--response, and is another reason to resolve the exposure
+definition before interpreting the activity arm.
+
+\subsection{Model diagnostics}
+Diagnostics were clean across all six configurations. Maximum adjusted GVIF was $1.41$--$1.49$
+(no collinearity concern), maximum Cook's distance $\approx 0.05$ (no influential observations),
+Box--Tidwell $p > 0.05$ for both continuous covariates (linearity on the logit scale holds), and
+zero duplicate \code{person_id} values in any analysis frame.
+
+%======================================================================
+\section{Pre-Specified Expectations and Interpretation Framework}
 %======================================================================
 Consistent with the FGID portfolio's hypothesis, we anticipate that higher sleep quantity and quality
 and higher physical activity will be associated with \emph{lower} adjusted odds of both GERD and
