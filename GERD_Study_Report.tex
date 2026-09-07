@@ -4159,8 +4159,10 @@ their presence.
 This appendix reproduces, in full, every remaining table produced by the run: the five baseline
 tables not shown in Section~\ref{sec:results}, all six exposure-descriptive tables, the combined
 cohort's quartile boundaries, the complete quartile-versus-spline comparison, both methods'
-odds ratios on the matched scale, the selected knot locations, and the multiplicity-adjusted
-$p$-values from the univariate models. Nothing is summarised or omitted.
+odds ratios on the matched scale, the selected knot locations, the multiplicity-adjusted
+$p$-values from the univariate models, the full spline model statistics (AIC, the compared
+percentiles, and both $\chi^2$ tests with degrees of freedom and raw $p$), and the absolute
+AIC of all three competing specifications. Nothing is summarised or omitted.
 
 \subsection{Baseline characteristics, remaining configurations}
 \footnotesize\begin{longtable}{@{}p{6.4cm}rrr@{}}
@@ -5139,6 +5141,136 @@ Sedentary minutes quartiles & Q2 & --- & $1.5\times10^{-13}$ & 0.105 & --- & 0.0
 Maximum daily heart rate quartiles & Q2 & --- & 1.000 & 1.000 & --- & 1.000 & 1.000 \\
  & Q3 & --- & 0.204 & 1.000 & --- & 1.000 & 1.000 \\
  & Q4 & --- & $2.9\times10^{-4}$ & 0.006 & --- & 1.000 & 1.000 \\
+\bottomrule \end{longtable}\normalsize
+
+\subsection{Complete spline model statistics}
+The Outputs section promises that each \code{spline\_summary} row carries the fitted AIC, the
+percentile pair the odds ratio compares, both $\chi^2$ statistics with their degrees of freedom,
+and the raw as well as adjusted $p$-values. Those columns are reproduced here in full.
+\footnotesize\begin{longtable}{@{}p{1.4cm}p{2.9cm}p{1.7cm}rrrr rrrr r@{}}
+\caption{Every column of the three \code{spline\_summary.csv} files not already shown in Table~\ref{tab:res-spline} or Table~\ref{tab:appM-knots}. $\chi^2_{\text{o}}$ and $\chi^2_{\text{nl}}$ are the overall and non-linearity Wald chunk tests, with degrees of freedom and raw $p$.}\label{tab:appM-splinestats}\\
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{$n$} & \textbf{Cases} & \textbf{AIC} & \textbf{P25} & \textbf{P75} & \textbf{$\chi^2_{\text{o}}$/df} & \textbf{$p_{\text{o}}$} & \textbf{$\chi^2_{\text{nl}}$/df} & \textbf{$p_{\text{nl}}$} \\ \midrule \endfirsthead
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{$n$} & \textbf{Cases} & \textbf{AIC} & \textbf{P25} & \textbf{P75} & \textbf{$\chi^2_{\text{o}}$/df} & \textbf{$p_{\text{o}}$} & \textbf{$\chi^2_{\text{nl}}$/df} & \textbf{$p_{\text{nl}}$} \\ \midrule \endhead
+sleep & \code{avg\_min\_asleep} & gerd\_any & 12{,}143 & 637 & 4829.6 & 377.3 & 444.2 & 0.1/2 & 0.947 & 0.1/1 & 0.781 \\
+sleep & \code{avg\_min\_in\_bed} & gerd\_any & 12{,}143 & 642 & 4854.8 & 415.7 &   487 & 3.0/2 & 0.224 & 2.7/1 & 0.103 \\
+sleep & \code{avg\_min\_awake} & gerd\_any & 12{,}143 & 633 & 4775.5 & 28.76 & 42.26 & 36.1/2 & $1.5\times10^{-8}$ & 1.3/1 & 0.259 \\
+sleep & \code{avg\_min\_restless} & gerd\_any & 12{,}143 & 629 & 4651.0 & 0.4081 & 5.536 & 133.4/3 & $1.0\times10^{-28}$ & 66.6/2 & $3.5\times10^{-15}$ \\
+sleep & \code{avg\_min\_deep} & gerd\_any & 12{,}143 & 628 & 4741.2 & 39.31 & 62.42 & 43.1/2 & $4.3\times10^{-10}$ & 1.5/1 & 0.216 \\
+sleep & \code{avg\_min\_light} & gerd\_any & 12{,}143 & 631 & 4703.0 & 204.8 & 279.4 & 101.0/4 & $6.2\times10^{-21}$ & 19.0/3 & $2.7\times10^{-4}$ \\
+sleep & \code{avg\_min\_rem} & gerd\_any & 12{,}143 & 632 & 4762.5 & 54.22 & 85.83 & 44.8/2 & $1.8\times10^{-10}$ & 0.0/1 & 0.924 \\
+sleep & \code{avg\_sleep\_efficiency} & gerd\_any & 12{,}143 & 626 & 4764.0 & 0.8999 & 0.9249 & 10.3/4 & 0.035 & 9.5/3 & 0.024 \\
+sleep & \code{avg\_min\_asleep} & esophagitis & 12{,}143 & 144 & 1583.9 & 377.3 & 444.2 & 1.0/2 & 0.615 & 0.5/1 & 0.493 \\
+sleep & \code{avg\_min\_in\_bed} & esophagitis & 12{,}143 & 146 & 1603.3 & 415.7 &   487 & 0.4/2 & 0.831 & 0.2/1 & 0.641 \\
+sleep & \code{avg\_min\_awake} & esophagitis & 12{,}143 & 147 & 1587.1 & 28.76 & 42.26 & 24.4/2 & $5.2\times10^{-6}$ & 9.7/1 & 0.002 \\
+sleep & \code{avg\_min\_restless} & esophagitis & 12{,}143 & 144 & 1561.2 & 0.4081 & 5.536 & 29.7/4 & $5.7\times10^{-6}$ & 15.2/3 & 0.002 \\
+sleep & \code{avg\_min\_deep} & esophagitis & 12{,}143 & 145 & 1572.0 & 39.31 & 62.42 & 23.1/2 & $9.8\times10^{-6}$ & 1.6/1 & 0.213 \\
+sleep & \code{avg\_min\_light} & esophagitis & 12{,}143 & 146 & 1571.7 & 204.8 & 279.4 & 30.6/2 & $2.3\times10^{-7}$ & 6.3/1 & 0.012 \\
+sleep & \code{avg\_min\_rem} & esophagitis & 12{,}143 & 144 & 1558.4 & 54.22 & 85.83 & 31.6/4 & $2.4\times10^{-6}$ & 9.1/3 & 0.029 \\
+sleep & \code{avg\_sleep\_efficiency} & esophagitis & 12{,}143 & 143 & 1577.8 & 0.8999 & 0.9249 & 0.5/2 & 0.790 & 0.2/1 & 0.643 \\
+activity & \code{avg\_daily\_steps} & gerd\_any & 18{,}842 & 912 & 7017.5 &  4102 &  8199 & 10.0/2 & 0.007 & 7.2/1 & 0.007 \\
+activity & \code{avg\_lightly\_active\_min} & gerd\_any & 18{,}842 & 897 & 6666.9 & 19.93 & 135.7 & 273.1/2 & $4.9\times10^{-60}$ & 102.4/1 & $4.5\times10^{-24}$ \\
+activity & \code{avg\_fairly\_active\_min} & gerd\_any & 18{,}843 & 894 & 6804.0 & 1.243 &  9.77 & 112.3/3 & $3.6\times10^{-24}$ & 53.7/2 & $2.2\times10^{-12}$ \\
+activity & \code{avg\_very\_active\_min} & gerd\_any & 18{,}843 & 894 & 6804.0 & 1.243 &  9.77 & 112.3/3 & $3.6\times10^{-24}$ & 53.7/2 & $2.2\times10^{-12}$ \\
+activity & \code{avg\_total\_active\_min} & gerd\_any & 18{,}842 & 896 & 6670.4 & 22.12 & 148.2 & 264.2/2 & $4.3\times10^{-58}$ & 98.3/1 & $3.6\times10^{-23}$ \\
+activity & \code{avg\_sedentary\_min} & gerd\_any & 18{,}842 & 898 & 6640.3 &  1201 &  1417 & 304.8/4 & $1.0\times10^{-64}$ & 109.1/3 & $1.7\times10^{-23}$ \\
+activity & \code{avg\_daily\_steps} & esophagitis & 18{,}842 & 218 & 2387.0 &  4102 &  8199 & 15.4/4 & 0.004 & 9.1/3 & 0.027 \\
+activity & \code{avg\_lightly\_active\_min} & esophagitis & 18{,}842 & 212 & 2282.1 & 19.93 & 135.7 & 60.2/2 & $8.4\times10^{-14}$ & 34.0/1 & $5.6\times10^{-9}$ \\
+activity & \code{avg\_fairly\_active\_min} & esophagitis & 18{,}843 & 214 & 2328.5 & 1.243 &  9.77 & 34.7/2 & $3.0\times10^{-8}$ & 26.0/1 & $3.4\times10^{-7}$ \\
+activity & \code{avg\_very\_active\_min} & esophagitis & 18{,}843 & 214 & 2328.5 & 1.243 &  9.77 & 34.7/2 & $3.0\times10^{-8}$ & 26.0/1 & $3.4\times10^{-7}$ \\
+activity & \code{avg\_total\_active\_min} & esophagitis & 18{,}842 & 214 & 2301.2 & 22.12 & 148.2 & 58.8/2 & $1.7\times10^{-13}$ & 32.5/1 & $1.2\times10^{-8}$ \\
+activity & \code{avg\_sedentary\_min} & esophagitis & 18{,}842 & 213 & 2286.7 &  1201 &  1417 & 64.0/2 & $1.3\times10^{-14}$ & 28.7/1 & $8.3\times10^{-8}$ \\
+combined & \code{avg\_min\_asleep} & gerd\_any & 12{,}093 & 630 & 4784.5 & 377.3 & 444.1 & 0.1/2 & 0.932 & 0.1/1 & 0.709 \\
+combined & \code{avg\_min\_in\_bed} & gerd\_any & 12{,}093 & 635 & 4809.6 & 415.7 &   487 & 3.2/2 & 0.198 & 2.8/1 & 0.093 \\
+combined & \code{avg\_min\_awake} & gerd\_any & 12{,}093 & 626 & 4731.8 & 28.83 & 42.27 & 33.3/2 & $5.9\times10^{-8}$ & 1.2/1 & 0.270 \\
+combined & \code{avg\_min\_restless} & gerd\_any & 12{,}093 & 623 & 4612.7 & 0.4053 & 5.471 & 132.5/3 & $1.6\times10^{-28}$ & 64.8/2 & $8.3\times10^{-15}$ \\
+combined & \code{avg\_min\_deep} & gerd\_any & 12{,}093 & 624 & 4711.1 &  39.4 & 62.44 & 45.2/2 & $1.5\times10^{-10}$ & 2.4/1 & 0.121 \\
+combined & \code{avg\_min\_light} & gerd\_any & 12{,}093 & 624 & 4661.6 & 205.2 & 279.5 & 99.5/4 & $1.3\times10^{-20}$ & 20.4/3 & $1.4\times10^{-4}$ \\
+combined & \code{avg\_min\_rem} & gerd\_any & 12{,}093 & 626 & 4727.5 & 54.34 & 85.91 & 43.5/2 & $3.7\times10^{-10}$ & 0.0/1 & 0.930 \\
+combined & \code{avg\_sleep\_efficiency} & gerd\_any & 12{,}093 & 620 & 4725.1 & 0.8998 & 0.9249 & 8.4/4 & 0.078 & 7.9/3 & 0.049 \\
+combined & \code{avg\_daily\_steps} & gerd\_any & 12{,}093 & 636 & 4810.4 &  4423 &  8505 & 12.9/4 & 0.012 & 12.0/3 & 0.007 \\
+combined & \code{avg\_lightly\_active\_min} & gerd\_any & 12{,}093 & 623 & 4590.4 & 24.21 & 157.8 & 152.0/2 & $9.9\times10^{-34}$ & 67.5/1 & $2.1\times10^{-16}$ \\
+combined & \code{avg\_fairly\_active\_min} & gerd\_any & 12{,}093 & 624 & 4687.3 & 1.537 & 11.33 & 56.7/3 & $3.0\times10^{-12}$ & 28.5/2 & $6.5\times10^{-7}$ \\
+combined & \code{avg\_very\_active\_min} & gerd\_any & 12{,}093 & 624 & 4687.3 & 1.537 & 11.33 & 56.7/3 & $3.0\times10^{-12}$ & 28.5/2 & $6.5\times10^{-7}$ \\
+combined & \code{avg\_total\_active\_min} & gerd\_any & 12{,}093 & 623 & 4596.7 & 27.24 & 171.1 & 146.1/2 & $1.9\times10^{-32}$ & 62.3/1 & $2.9\times10^{-15}$ \\
+combined & \code{avg\_sedentary\_min} & gerd\_any & 12{,}093 & 622 & 4563.5 &  1186 &  1411 & 172.4/4 & $3.3\times10^{-36}$ & 80.1/3 & $2.9\times10^{-17}$ \\
+combined & \code{avg\_min\_asleep} & esophagitis & 12{,}093 & 144 & 1582.7 & 377.3 & 444.1 & 1.0/2 & 0.618 & 0.5/1 & 0.493 \\
+combined & \code{avg\_min\_in\_bed} & esophagitis & 12{,}093 & 146 & 1602.1 & 415.7 &   487 & 0.4/2 & 0.831 & 0.2/1 & 0.643 \\
+combined & \code{avg\_min\_awake} & esophagitis & 12{,}093 & 146 & 1577.8 & 28.83 & 42.27 & 23.7/2 & $7.3\times10^{-6}$ & 9.8/1 & 0.002 \\
+combined & \code{avg\_min\_restless} & esophagitis & 12{,}093 & 144 & 1559.1 & 0.4053 & 5.471 & 30.5/4 & $3.8\times10^{-6}$ & 15.4/3 & 0.002 \\
+combined & \code{avg\_min\_deep} & esophagitis & 12{,}093 & 144 & 1564.0 &  39.4 & 62.44 & 22.0/2 & $1.6\times10^{-5}$ & 1.6/1 & 0.201 \\
+combined & \code{avg\_min\_light} & esophagitis & 12{,}093 & 145 & 1562.6 & 205.2 & 279.5 & 30.7/2 & $2.2\times10^{-7}$ & 6.7/1 & 0.010 \\
+combined & \code{avg\_min\_rem} & esophagitis & 12{,}093 & 144 & 1555.6 & 54.34 & 85.91 & 33.2/4 & $1.1\times10^{-6}$ & 9.3/3 & 0.025 \\
+combined & \code{avg\_sleep\_efficiency} & esophagitis & 12{,}093 & 143 & 1576.5 & 0.8998 & 0.9249 & 0.6/2 & 0.752 & 0.3/1 & 0.599 \\
+combined & \code{avg\_daily\_steps} & esophagitis & 12{,}093 & 148 & 1607.8 &  4423 &  8505 & 9.8/2 & 0.007 & 4.2/1 & 0.041 \\
+combined & \code{avg\_lightly\_active\_min} & esophagitis & 12{,}093 & 145 & 1563.8 & 24.21 & 157.8 & 27.7/2 & $9.8\times10^{-7}$ & 13.2/1 & $2.9\times10^{-4}$ \\
+combined & \code{avg\_fairly\_active\_min} & esophagitis & 12{,}093 & 147 & 1594.2 & 1.537 & 11.33 & 19.8/4 & $5.4\times10^{-4}$ & 16.2/3 & 0.001 \\
+combined & \code{avg\_very\_active\_min} & esophagitis & 12{,}093 & 147 & 1594.2 & 1.537 & 11.33 & 19.8/4 & $5.4\times10^{-4}$ & 16.2/3 & 0.001 \\
+combined & \code{avg\_total\_active\_min} & esophagitis & 12{,}093 & 146 & 1571.5 & 27.24 & 171.1 & 27.5/2 & $1.1\times10^{-6}$ & 11.9/1 & $5.7\times10^{-4}$ \\
+combined & \code{avg\_sedentary\_min} & esophagitis & 12{,}093 & 145 & 1558.7 &  1186 &  1411 & 31.8/2 & $1.2\times10^{-7}$ & 13.0/1 & $3.0\times10^{-4}$ \\
+\bottomrule \end{longtable}\normalsize
+\subsection{Absolute AIC of the competing models}
+Table~\ref{tab:appM-qvs} reports only the AIC \emph{difference}. The three fitted values behind
+each difference are given here, so the comparison can be reconstructed independently.
+\footnotesize\begin{longtable}{@{}p{1.6cm}p{3.2cm}p{2.0cm}rrrr@{}}
+\caption{Absolute AIC for the quartile, linear and spline specifications of every exposure--outcome pair, from the \code{aic\_quartile}, \code{aic\_linear} and \code{aic\_spline} columns.}\label{tab:appM-aicabs}\\
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{Quartile} & \textbf{Linear} & \textbf{Spline} & \textbf{$\Delta$} \\ \midrule \endfirsthead
+\toprule \textbf{Cohort} & \textbf{Exposure} & \textbf{Outcome} & \textbf{Quartile} & \textbf{Linear} & \textbf{Spline} & \textbf{$\Delta$} \\ \midrule \endhead
+sleep & \code{avg\_min\_asleep} & gerd\_any & 4828.2 & 4827.7 & 4829.7 & 1.5 \\
+sleep & \code{avg\_min\_in\_bed} & gerd\_any & 4856.0 & 4855.4 & 4854.8 & -1.2 \\
+sleep & \code{avg\_min\_awake} & gerd\_any & 4782.5 & 4774.8 & 4775.5 & -7.0 \\
+sleep & \code{avg\_min\_restless} & gerd\_any & 4664.8 & 4713.6 & 4651.0 & -13.8 \\
+sleep & \code{avg\_min\_deep} & gerd\_any & 4745.6 & 4740.8 & 4741.2 & -4.4 \\
+sleep & \code{avg\_min\_light} & gerd\_any & 4712.6 & 4716.0 & 4703.0 & -9.6 \\
+sleep & \code{avg\_min\_rem} & gerd\_any & 4771.0 & 4760.5 & 4762.5 & -8.5 \\
+sleep & \code{avg\_sleep\_efficiency} & gerd\_any & 4767.8 & 4767.5 & 4764.0 & -3.8 \\
+sleep & \code{avg\_min\_asleep} & esophagitis & 1585.4 & 1582.4 & 1583.9 & -1.4 \\
+sleep & \code{avg\_min\_in\_bed} & esophagitis & 1602.9 & 1601.6 & 1603.3 & 0.5 \\
+sleep & \code{avg\_min\_awake} & esophagitis & 1594.8 & 1594.9 & 1587.1 & -7.7 \\
+sleep & \code{avg\_min\_restless} & esophagitis & 1566.3 & 1570.4 & 1561.2 & -5.1 \\
+sleep & \code{avg\_min\_deep} & esophagitis & 1575.5 & 1571.5 & 1572.0 & -3.5 \\
+sleep & \code{avg\_min\_light} & esophagitis & 1578.7 & 1576.0 & 1571.7 & -7.0 \\
+sleep & \code{avg\_min\_rem} & esophagitis & 1561.0 & 1561.4 & 1558.4 & -2.6 \\
+sleep & \code{avg\_sleep\_efficiency} & esophagitis & 1574.1 & 1576.0 & 1577.8 & 3.7 \\
+activity & \code{avg\_daily\_steps} & gerd\_any & 7021.7 & 7022.6 & 7017.5 & -4.2 \\
+activity & \code{avg\_lightly\_active\_min} & gerd\_any & 6687.6 & 6767.3 & 6666.9 & -20.7 \\
+activity & \code{avg\_fairly\_active\_min} & gerd\_any & 6811.8 & 6853.7 & 6804.0 & -7.8 \\
+activity & \code{avg\_very\_active\_min} & gerd\_any & 6811.8 & 6853.7 & 6804.0 & -7.8 \\
+activity & \code{avg\_total\_active\_min} & gerd\_any & 6687.2 & 6766.7 & 6670.4 & -16.8 \\
+activity & \code{avg\_sedentary\_min} & gerd\_any & 6672.2 & 6743.4 & 6640.3 & -31.9 \\
+activity & \code{avg\_daily\_steps} & esophagitis & 2392.4 & 2390.1 & 2387.0 & -5.4 \\
+activity & \code{avg\_lightly\_active\_min} & esophagitis & 2286.2 & 2314.1 & 2282.1 & -4.1 \\
+activity & \code{avg\_fairly\_active\_min} & esophagitis & 2336.4 & 2352.5 & 2328.5 & -7.9 \\
+activity & \code{avg\_very\_active\_min} & esophagitis & 2336.4 & 2352.5 & 2328.5 & -7.9 \\
+activity & \code{avg\_total\_active\_min} & esophagitis & 2309.1 & 2331.7 & 2301.2 & -7.9 \\
+activity & \code{avg\_sedentary\_min} & esophagitis & 2290.4 & 2313.4 & 2286.7 & -3.7 \\
+combined & \code{avg\_min\_asleep} & gerd\_any & 4782.4 & 4782.7 & 4784.5 & 2.2 \\
+combined & \code{avg\_min\_in\_bed} & gerd\_any & 4810.1 & 4810.4 & 4809.6 & -0.5 \\
+combined & \code{avg\_min\_awake} & gerd\_any & 4736.8 & 4731.0 & 4731.8 & -5.0 \\
+combined & \code{avg\_min\_restless} & gerd\_any & 4627.2 & 4673.5 & 4612.7 & -14.5 \\
+combined & \code{avg\_min\_deep} & gerd\_any & 4716.3 & 4711.5 & 4711.1 & -5.2 \\
+combined & \code{avg\_min\_light} & gerd\_any & 4670.6 & 4676.0 & 4661.6 & -9.0 \\
+combined & \code{avg\_min\_rem} & gerd\_any & 4736.3 & 4725.5 & 4727.5 & -8.8 \\
+combined & \code{avg\_sleep\_efficiency} & gerd\_any & 4727.4 & 4726.9 & 4725.0 & -2.3 \\
+combined & \code{avg\_daily\_steps} & gerd\_any & 4818.3 & 4816.4 & 4810.4 & -7.8 \\
+combined & \code{avg\_lightly\_active\_min} & gerd\_any & 4607.7 & 4655.9 & 4590.4 & -17.4 \\
+combined & \code{avg\_fairly\_active\_min} & gerd\_any & 4689.6 & 4711.8 & 4687.3 & -2.3 \\
+combined & \code{avg\_very\_active\_min} & gerd\_any & 4689.6 & 4711.8 & 4687.3 & -2.3 \\
+combined & \code{avg\_total\_active\_min} & gerd\_any & 4613.8 & 4657.1 & 4596.7 & -17.0 \\
+combined & \code{avg\_sedentary\_min} & gerd\_any & 4571.2 & 4637.6 & 4563.5 & -7.7 \\
+combined & \code{avg\_min\_asleep} & esophagitis & 1584.1 & 1581.2 & 1582.7 & -1.4 \\
+combined & \code{avg\_min\_in\_bed} & esophagitis & 1601.6 & 1600.3 & 1602.1 & 0.5 \\
+combined & \code{avg\_min\_awake} & esophagitis & 1585.9 & 1585.6 & 1577.8 & -8.1 \\
+combined & \code{avg\_min\_restless} & esophagitis & 1565.0 & 1568.5 & 1559.1 & -5.8 \\
+combined & \code{avg\_min\_deep} & esophagitis & 1568.0 & 1563.6 & 1564.0 & -4.0 \\
+combined & \code{avg\_min\_light} & esophagitis & 1570.6 & 1567.3 & 1562.6 & -8.0 \\
+combined & \code{avg\_min\_rem} & esophagitis & 1560.1 & 1558.9 & 1555.6 & -4.5 \\
+combined & \code{avg\_sleep\_efficiency} & esophagitis & 1572.9 & 1574.8 & 1576.5 & 3.6 \\
+combined & \code{avg\_daily\_steps} & esophagitis & 1612.6 & 1610.0 & 1607.8 & -4.8 \\
+combined & \code{avg\_lightly\_active\_min} & esophagitis & 1571.7 & 1574.9 & 1563.8 & -7.9 \\
+combined & \code{avg\_fairly\_active\_min} & esophagitis & 1592.5 & 1604.4 & 1594.2 & 1.7 \\
+combined & \code{avg\_very\_active\_min} & esophagitis & 1592.5 & 1604.4 & 1594.2 & 1.7 \\
+combined & \code{avg\_total\_active\_min} & esophagitis & 1578.9 & 1581.4 & 1571.5 & -7.4 \\
+combined & \code{avg\_sedentary\_min} & esophagitis & 1561.4 & 1569.8 & 1558.7 & -2.6 \\
 \bottomrule \end{longtable}\normalsize
 
 \end{document}
